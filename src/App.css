@@ -1,0 +1,290 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f9fafb;
+}
+
+.app-container {
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.max-w-6xl {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.header h1 {
+  font-size: 1.875rem;
+  font-weight: bold;
+  color: #111827;
+}
+
+.header-icon {
+  height: 2rem;
+  width: 2rem;
+  color: #f97316;
+}
+
+.main-timer {
+  background: linear-gradient(to right, #f97316, #dc2626);
+  border-radius: 1rem;
+  padding: 2rem;
+  color: white;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.timer-display {
+  font-size: 3.75rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.quarter-display {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.start-button {
+  background-color: white;
+  color: #f97316;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.start-button:hover {
+  background-color: #f3f4f6;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.half-time-button {
+  background-color: #3b82f6;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.half-time-button:hover {
+  background-color: #2563eb;
+}
+
+.reset-button {
+  background-color: #ef4444;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reset-button:hover {
+  background-color: #dc2626;
+}
+
+.players-table-container {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.players-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-header {
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.table-body {
+  background-color: white;
+}
+
+.table-row {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-row:hover {
+  background-color: #f9fafb;
+}
+
+.table-cell {
+  padding: 1rem;
+  vertical-align: top;
+}
+
+.player-number {
+  font-size: 1.125rem;
+  font-weight: bold;
+  color: #111827;
+}
+
+.player-name {
+  font-weight: 500;
+  color: #111827;
+}
+
+.session-info {
+  font-size: 0.875rem;
+  color: #2563eb;
+  margin-top: 0.25rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+}
+
+.status-playing {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.status-bench {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.time-display {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 1.125rem;
+}
+
+.time-total {
+  color: #111827;
+  font-weight: bold;
+}
+
+.time-playing {
+  color: #6b7280;
+}
+
+.time-rest {
+  color: #dc2626;
+}
+
+.time-hidden {
+  color: #6b7280;
+}
+
+.rest-time-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.eye-button {
+  color: #9ca3af;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+.eye-button:hover {
+  color: #6b7280;
+}
+
+.action-button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.button-in {
+  background-color: #22c55e;
+  color: white;
+}
+
+.button-in:hover {
+  background-color: #16a34a;
+}
+
+.button-out {
+  background-color: #ef4444;
+  color: white;
+}
+
+.button-out:hover {
+  background-color: #dc2626;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    padding: 0.5rem;
+  }
+  
+  .timer-display {
+    font-size: 2.5rem;
+  }
+  
+  .header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .players-table-container {
+    overflow-x: auto;
+  }
+  
+  .table-cell {
+    padding: 0.5rem;
+  }
+  
+  .control-buttons {
+    flex-direction: column;
+  }
+}
