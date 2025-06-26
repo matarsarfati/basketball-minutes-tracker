@@ -4,7 +4,6 @@ import './App.css';
 
 function App() {
   const [gameTime, setGameTime] = useState(600); // 10 minutes in seconds
-  const [realTime, setRealTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [players, setPlayers] = useState([
@@ -90,7 +89,6 @@ function App() {
     // If starting the game for the first time
     if (newRunningState && !gameStarted) {
       setGameStarted(true);
-      setRealTime(0);
     }
   };
 
