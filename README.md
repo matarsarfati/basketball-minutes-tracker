@@ -1,1 +1,1 @@
-# Basketball Minutes Tracker
+# Basketball Minutes Tracker - Player Rotation Management
