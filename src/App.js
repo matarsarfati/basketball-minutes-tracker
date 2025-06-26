@@ -4,6 +4,7 @@ import './App.css';
 
 function App() {
   const [gameTime, setGameTime] = useState(600); // 10 minutes in seconds
+  const [realTime, setRealTime] = useState(0); // הוספת המשתנה החסר
   const [isRunning, setIsRunning] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [players, setPlayers] = useState([
