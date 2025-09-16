@@ -3,10 +3,13 @@ import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus } from 'lucide-rea
 import './App.css';
 
 function App() {
-  const [gameTime, setGameTime] = useState(600); // 10 minutes in seconds
-  const [realTime, setRealTime] = useState(0); // הוספת המשתנה החסר
+  const [gameTime, setGameTime] = useState(2400); // 40 minutes total (4 quarters × 10 minutes)
+  const [currentQuarter, setCurrentQuarter] = useState(1); // Track current quarter separately
+  const [isQuarterBreak, setIsQuarterBreak] = useState(false); // Track if we're between quarters
+  const [realTime, setRealTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
+  const [gameSpeed, setGameSpeed] = useState(1); // New state for game speed
   const [players, setPlayers] = useState([
     { id: 1, name: 'Player 1', number: 4, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
     { id: 2, name: 'Player 2', number: 7, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
@@ -25,10 +28,14 @@ function App() {
   const intervalRef = useRef(null);
   const realTimeIntervalRef = useRef(null);
 
-  // Format time for display
-  const formatGameTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+  // Format time for quarter display (shows 10:00 per quarter, resets each quarter)
+  const formatQuarterTime = (totalSeconds) => {
+    const quarterLength = 600; // 10 minutes per quarter
+    const timeInCurrentQuarter = totalSeconds % quarterLength;
+    // Show countdown from 10:00 to 00:00
+    const timeRemaining = timeInCurrentQuarter === 0 ? 600 : timeInCurrentQuarter;
+    const mins = Math.floor(timeRemaining / 60);
+    const secs = timeRemaining % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -40,57 +47,130 @@ function App() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Get current quarter
-  const getCurrentQuarter = () => {
-    if (gameTime > 450) return 1;
-    if (gameTime > 300) return 2;
-    if (gameTime > 150) return 3;
-    return 4;
+  // Format time for display (regular MM:SS format)
+  const formatGameTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Main game timer (counting down) - for official game time
+  // Get current quarter and update quarter state
+  const getCurrentQuarter = () => {
+    const quarterLength = 600; // 10 minutes per quarter
+    const timeElapsed = 2400 - gameTime;
+    const newQuarter = Math.floor(timeElapsed / quarterLength) + 1;
+    
+    // Update quarter state if it changed
+    if (newQuarter !== currentQuarter && newQuarter <= 4) {
+      setCurrentQuarter(newQuarter);
+    }
+    
+    return Math.min(newQuarter, 4);
+  };
+
+  // Main game timer (counting down) - with quarter breaks and half-time logic
   useEffect(() => {
     if (isRunning && gameStarted) {
       intervalRef.current = setInterval(() => {
-        setGameTime(prev => Math.max(0, prev - 1));
+        setGameTime(prev => {
+          const newTime = Math.max(0, prev - gameSpeed);
+          
+          // Check if quarter ended (when time reaches a multiple of 600 seconds remaining)
+          const quarterLength = 600;
+          const timeInCurrentQuarter = newTime % quarterLength;
+          
+          // If we just hit the end of a quarter (timeInCurrentQuarter becomes 0 and we're not at game end)
+          if (timeInCurrentQuarter === 0 && newTime > 0) {
+            const newQuarter = getCurrentQuarter() + 1;
+            
+            // Check if this is half-time (end of Q2, going to Q3)
+            if (newQuarter === 3) {
+              // Half-time logic
+              setPlayers(prevPlayers => 
+                prevPlayers.map(player => ({
+                  ...player,
+                  currentRestTime: 0, // Reset all rest times at half-time
+                  // If player is currently playing, end their session and start new one
+                  ...(player.isPlaying ? {
+                    playingSessions: player.playingSessions.map((session, index) => 
+                      index === player.playingSessions.length - 1 && session.isActive
+                        ? { ...session, end: formatQuarterTime(newTime), isActive: false }
+                        : session
+                    ).concat([{
+                      start: '10:00', // Will start at beginning of Q3
+                      end: '',
+                      quarter: 3,
+                      isActive: true
+                    }])
+                  } : {})
+                }))
+              );
+            }
+            
+            // Auto-pause at end of any quarter
+            setIsRunning(false);
+            setGameSpeed(1); // Reset speed
+            setIsQuarterBreak(true);
+          }
+          
+          return newTime;
+        });
       }, 1000);
     } else {
       clearInterval(intervalRef.current);
     }
 
     return () => clearInterval(intervalRef.current);
-  }, [isRunning, gameStarted]);
+  }, [isRunning, gameStarted, gameSpeed]);
 
-  // Real time timer - runs continuously once game started (for rest sessions)
+  // Real time timer - runs continuously once game started (for rest sessions) - pauses during quarter breaks and half-time
   useEffect(() => {
-    if (gameStarted) {
+    if (gameStarted && !isQuarterBreak) {
       realTimeIntervalRef.current = setInterval(() => {
         setRealTime(prev => prev + 1);
-        // Update rest time for all players who are resting
-        setPlayers(prevPlayers => 
-          prevPlayers.map(player => 
-            (!player.isPlaying && gameStarted) 
-              ? { ...player, currentRestTime: player.currentRestTime + 1 }
-              : player
-          )
-        );
+        // Update rest time for all players who are resting - only if not in quarter break
+        const currentQ = getCurrentQuarter();
+        const isHalfTime = currentQ === 3 && gameTime <= 1800 && gameTime > 1200; // Between Q2 and Q3
+        
+        if (!isHalfTime) {
+          setPlayers(prevPlayers => 
+            prevPlayers.map(player => 
+              (!player.isPlaying && gameStarted) 
+                ? { ...player, currentRestTime: player.currentRestTime + gameSpeed }
+                : player
+            )
+          );
+        }
       }, 1000);
     } else {
       clearInterval(realTimeIntervalRef.current);
     }
 
     return () => clearInterval(realTimeIntervalRef.current);
-  }, [gameStarted]);
+  }, [gameStarted, gameSpeed, isQuarterBreak]);
 
   // Start/stop game timer
   const toggleGame = () => {
     const newRunningState = !isRunning;
     setIsRunning(newRunningState);
     
+    // Reset speed to 1x when starting or stopping
+    setGameSpeed(1);
+    
+    // Clear quarter break state when starting
+    if (newRunningState) {
+      setIsQuarterBreak(false);
+    }
+    
     // If starting the game for the first time
     if (newRunningState && !gameStarted) {
       setGameStarted(true);
     }
+  };
+
+  // Change game speed
+  const changeGameSpeed = (speed) => {
+    setGameSpeed(speed);
   };
 
   // Put player in game
@@ -101,12 +181,11 @@ function App() {
             ...player, 
             isPlaying: true, 
             currentSessionStart: gameTime,
-            currentRestTime: 0, // Reset rest time to 0
+            currentRestTime: 0,
             hasEverPlayed: true,
-            // Add entry session immediately when player enters
             playingSessions: [...player.playingSessions, {
-              start: formatGameTime(gameTime),
-              end: '', // Will be filled when player exits
+              start: formatQuarterTime(gameTime),
+              end: '',
               quarter: getCurrentQuarter(),
               isActive: true
             }]
@@ -120,13 +199,12 @@ function App() {
     setPlayers(players.map(player => {
       if (player.id === playerId && player.isPlaying) {
         const sessionMinutes = player.currentSessionStart - gameTime;
-        // Update the last session with exit time
         const updatedSessions = [...player.playingSessions];
         const lastSessionIndex = updatedSessions.length - 1;
         if (lastSessionIndex >= 0 && updatedSessions[lastSessionIndex].isActive) {
           updatedSessions[lastSessionIndex] = {
             ...updatedSessions[lastSessionIndex],
-            end: formatGameTime(gameTime),
+            end: formatQuarterTime(gameTime),
             isActive: false
           };
         }
@@ -136,7 +214,7 @@ function App() {
           isPlaying: false,
           totalMinutes: player.totalMinutes + sessionMinutes,
           currentSessionStart: 0,
-          currentRestTime: 0, // Start rest time from 0
+          currentRestTime: 0,
           playingSessions: updatedSessions
         };
       }
@@ -152,10 +230,12 @@ function App() {
   // Reset game with confirmation
   const resetGame = () => {
     if (window.confirm('Are you sure you want to reset the entire game? This will clear all data.')) {
-      setGameTime(600);
+      setGameTime(2400);
+      setCurrentQuarter(1);
       setRealTime(0);
       setIsRunning(false);
       setGameStarted(false);
+      setGameSpeed(1); // Reset speed to normal
       setPlayers(players.map(player => ({
         ...player,
         isPlaying: false,
@@ -169,48 +249,7 @@ function App() {
     }
   };
 
-  // Reset consecutive times (for half-time) with confirmation
-  const resetConsecutiveTimes = () => {
-    if (window.confirm('Are you sure you want to reset consecutive times? This is typically done at half-time.')) {
-      setPlayers(players.map(player => {
-        if (player.isPlaying) {
-          // For playing players, add current session to total and restart session
-          const sessionMinutes = player.currentSessionStart - gameTime;
-          // Update current active session
-          const updatedSessions = [...player.playingSessions];
-          const lastSessionIndex = updatedSessions.length - 1;
-          if (lastSessionIndex >= 0 && updatedSessions[lastSessionIndex].isActive) {
-            updatedSessions[lastSessionIndex] = {
-              ...updatedSessions[lastSessionIndex],
-              end: formatGameTime(gameTime),
-              isActive: false
-            };
-            // Add new session starting now
-            updatedSessions.push({
-              start: formatGameTime(gameTime),
-              end: '',
-              quarter: getCurrentQuarter(),
-              isActive: true
-            });
-          }
-          
-          return {
-            ...player,
-            totalMinutes: player.totalMinutes + sessionMinutes,
-            currentSessionStart: gameTime,
-            playingSessions: updatedSessions
-          };
-        } else if (player.hasEverPlayed) {
-          // For resting players, reset rest time
-          return {
-            ...player,
-            currentRestTime: 0
-          };
-        }
-        return player;
-      }));
-    }
-  };
+  // Remove the resetConsecutiveTimes function since it's no longer needed
 
   // Toggle rest time visibility
   const toggleRestTimeVisibility = (playerId) => {
@@ -250,19 +289,21 @@ function App() {
     }
   };
 
-  // Get last session text for display
+  // Get last session text for display - simple version showing only entry/exit info
   const getLastSessionText = (player) => {
     if (player.playingSessions.length === 0) return '';
     
     const lastSession = player.playingSessions[player.playingSessions.length - 1];
     if (lastSession.isActive) {
+      // Show entry time only
       return `Q${lastSession.quarter} ${lastSession.start}-`;
     } else {
+      // Show entry and exit
       return `Q${lastSession.quarter} ${lastSession.start}-${lastSession.end}`;
     }
   };
 
-  // Get all sessions text for modal
+  // Get all sessions text for modal - simple version
   const getAllSessionsText = (player) => {
     if (player.playingSessions.length === 0) return [];
     
@@ -292,9 +333,46 @@ function App() {
         {/* Main Timer */}
         <div className="main-timer">
           <div className="timer-display">
-            {formatGameTime(gameTime)}
+            {formatQuarterTime(gameTime)}
           </div>
-          <div className="quarter-display">Quarter {getCurrentQuarter()}</div>
+          <div className="quarter-display">
+            Quarter {getCurrentQuarter()}
+            {isQuarterBreak && (
+              <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.9 }}>
+                {getCurrentQuarter() === 3 && gameTime === 1800 ? 'Half Time' : 'Break'}
+              </div>
+            )}
+          </div>
+          
+          {/* Speed Control */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '1rem', 
+            marginBottom: '1rem',
+            justifyContent: 'center'
+          }}>
+            <span style={{ fontSize: '0.875rem', opacity: 0.9 }}>Speed:</span>
+            {[1, 2, 4].map(speed => (
+              <button
+                key={speed}
+                onClick={() => changeGameSpeed(speed)}
+                style={{
+                  backgroundColor: gameSpeed === speed ? '#dc2626' : 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: '0.375rem',
+                  padding: '0.25rem 0.75rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+
           <button onClick={toggleGame} className="start-button">
             {isRunning ? <Pause size={20} /> : <Play size={20} />}
             {isRunning ? 'Pause' : 'Start'}
@@ -303,9 +381,6 @@ function App() {
 
         {/* Control Buttons */}
         <div className="control-buttons">
-          <button onClick={resetConsecutiveTimes} className="half-time-button">
-            Half Time Reset
-          </button>
           <button onClick={resetGame} className="reset-button">
             🔄 Reset Game
           </button>
