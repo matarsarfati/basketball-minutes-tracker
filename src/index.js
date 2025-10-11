@@ -1,17 +1,50 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
+import SchedulePlanner from './SchedulePlanner';
+import SurveyForm from './SurveyForm';
+import GymLayout from './components/layout/GymLayout';
+import GymPage from './pages/GymPage';
+import './index.css';
+
+const PracticeLive = lazy(() => import('./PracticeLive'));
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <App />,
+  },
+  {
+    path: "/schedule",
+    element: <SchedulePlanner />,
+  },
+  {
+    path: "/practice/:sessionId",
+    element: (
+      <Suspense fallback={<div>Loading…</div>}>
+        <PracticeLive />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/survey/:sessionId",
+    element: <SurveyForm />,
+  },
+  {
+    element: <GymLayout />,
+    children: [
+      {
+        path: "/gym",
+        element: <GymPage />,
+      }
+    ],
+  },
+]);
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </React.StrictMode>
 );
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();

@@ -1,0 +1,47 @@
+.exercise-card.dragging {
+  opacity: 0.5;
+  border: 2px dashed #4a90e2;
+}
+
+.exercise-card {
+  transition: transform 0.2s ease;
+}
+
+.exercise-card:hover {
+  transform: translateY(-2px);
+}
+
+.exercise-selector {
+  padding: 20px;
+  min-width: 300px;
+}
+
+.exercise-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 15px 0;
+}
+
+.exercise-list label {
+  display: block;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.exercise-list label:hover {
+  background-color: #f3f4f6;
+}
+
+.add-selected {
+  width: 100%;
+  padding: 8px;
+  background-color: #2563eb;
+  color: white;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+.add-selected:hover {
+  background-color: #1d4ed8;
+}

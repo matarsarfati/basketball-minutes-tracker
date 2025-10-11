@@ -1,0 +1,30 @@
+.plan-exercise-card.dragging {
+  opacity: 0.5;
+}
+
+.plan-exercise-card {
+  transition: transform 0.2s;
+}
+
+.plan-exercise-card:hover:not(.dragging) {
+  transform: translateY(-2px);
+}
+
+.plan-exercise-row {
+  position: relative;
+}
+
+.plan-exercise-row::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background-color: transparent;
+  transition: background-color 0.2s;
+}
+
+.plan-exercise-row:hover::after {
+  background-color: rgba(59, 130, 246, 0.1);
+}

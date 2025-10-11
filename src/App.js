@@ -1,118 +1,111 @@
+// App.js – Minutes Tracker (fixed for createBrowserRouter)
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import './App.css';
+import GymPage from './pages/GymPage'; // Update to use the new GymPage
+import './migrateData';
 
-function App() {
-  const [gameTime, setGameTime] = useState(2400); // 40 minutes total (4 quarters × 10 minutes)
-  const [currentQuarter, setCurrentQuarter] = useState(1); // Track current quarter separately
-  const [isQuarterBreak, setIsQuarterBreak] = useState(false); // Track if we're between quarters
-  const [realTime, setRealTime] = useState(0);
+/* ==== Constants ==== */
+const QUARTER_LENGTH = 600;
+const TOTAL_GAME_SECONDS = 2400;
+
+/* ==== Helpers ==== */
+const formatQuarterTime = (totalSeconds) => {
+  const timeInCurrentQuarter = totalSeconds % QUARTER_LENGTH;
+  const timeRemaining = timeInCurrentQuarter === 0 ? QUARTER_LENGTH : timeInCurrentQuarter;
+  const mins = Math.floor(timeRemaining / 60);
+  const secs = timeRemaining % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const formatTime = (seconds) => {
+  const absSeconds = Math.abs(seconds);
+  const mins = Math.floor(absSeconds / 60);
+  const secs = absSeconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const computeQuarter = (time) => {
+  const timeElapsed = TOTAL_GAME_SECONDS - time;
+  const rawQuarter = Math.floor(timeElapsed / QUARTER_LENGTH) + 1;
+  return Math.min(Math.max(rawQuarter, 1), 4);
+};
+
+function MinutesTracker() {
+  /* ==== Game State ==== */
+  const [gameTime, setGameTime] = useState(TOTAL_GAME_SECONDS);
+  const [currentQuarter, setCurrentQuarter] = useState(1);
+  const [isQuarterBreak, setIsQuarterBreak] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
-  const [gameSpeed, setGameSpeed] = useState(1); // New state for game speed
+  const [gameSpeed, setGameSpeed] = useState(1);
+
   const [players, setPlayers] = useState([
-    { id: 1, name: 'Player 1', number: 4, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-    { id: 2, name: 'Player 2', number: 7, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
+    { id: 1, name: 'Player 1', number: 4,  isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
+    { id: 2, name: 'Player 2', number: 7,  isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
     { id: 3, name: 'Player 3', number: 11, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
     { id: 4, name: 'Player 4', number: 23, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
     { id: 5, name: 'Player 5', number: 33, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
   ]);
-  
-  // Modal states
+
+  /* ==== Modal State ==== */
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [showSessionHistory, setShowSessionHistory] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
-  
+
+  /* ==== Refs ==== */
   const intervalRef = useRef(null);
   const realTimeIntervalRef = useRef(null);
+  const gameTimeRef = useRef(gameTime);
 
-  // Format time for quarter display (shows 10:00 per quarter, resets each quarter)
-  const formatQuarterTime = (totalSeconds) => {
-    const quarterLength = 600; // 10 minutes per quarter
-    const timeInCurrentQuarter = totalSeconds % quarterLength;
-    // Show countdown from 10:00 to 00:00
-    const timeRemaining = timeInCurrentQuarter === 0 ? 600 : timeInCurrentQuarter;
-    const mins = Math.floor(timeRemaining / 60);
-    const secs = timeRemaining % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    gameTimeRef.current = gameTime;
+  }, [gameTime]);
 
-  // Format time for sessions (MM:SS) - works with positive seconds
-  const formatTime = (seconds) => {
-    const absSeconds = Math.abs(seconds);
-    const mins = Math.floor(absSeconds / 60);
-    const secs = absSeconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Format time for display (regular MM:SS format)
-  const formatGameTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Get current quarter and update quarter state
-  const getCurrentQuarter = () => {
-    const quarterLength = 600; // 10 minutes per quarter
-    const timeElapsed = 2400 - gameTime;
-    const newQuarter = Math.floor(timeElapsed / quarterLength) + 1;
-    
-    // Update quarter state if it changed
-    if (newQuarter !== currentQuarter && newQuarter <= 4) {
-      setCurrentQuarter(newQuarter);
-    }
-    
-    return Math.min(newQuarter, 4);
-  };
-
-  // Main game timer (counting down) - with quarter breaks and half-time logic
+  /* ==== Main countdown timer ==== */
   useEffect(() => {
     if (isRunning && gameStarted) {
       intervalRef.current = setInterval(() => {
-        setGameTime(prev => {
+        setGameTime((prev) => {
           const newTime = Math.max(0, prev - gameSpeed);
-          
-          // Check if quarter ended (when time reaches a multiple of 600 seconds remaining)
-          const quarterLength = 600;
-          const timeInCurrentQuarter = newTime % quarterLength;
-          
-          // If we just hit the end of a quarter (timeInCurrentQuarter becomes 0 and we're not at game end)
+
+          const prevQ = computeQuarter(prev);
+          const nextQ = computeQuarter(newTime);
+          if (nextQ !== prevQ) setCurrentQuarter(nextQ);
+
+          const timeInCurrentQuarter = newTime % QUARTER_LENGTH;
           if (timeInCurrentQuarter === 0 && newTime > 0) {
-            const newQuarter = getCurrentQuarter() + 1;
-            
-            // Check if this is half-time (end of Q2, going to Q3)
-            if (newQuarter === 3) {
-              // Half-time logic
-              setPlayers(prevPlayers => 
-                prevPlayers.map(player => ({
-                  ...player,
-                  currentRestTime: 0, // Reset all rest times at half-time
-                  // If player is currently playing, end their session and start new one
-                  ...(player.isPlaying ? {
-                    playingSessions: player.playingSessions.map((session, index) => 
-                      index === player.playingSessions.length - 1 && session.isActive
-                        ? { ...session, end: formatQuarterTime(newTime), isActive: false }
-                        : session
-                    ).concat([{
-                      start: '10:00', // Will start at beginning of Q3
-                      end: '',
-                      quarter: 3,
-                      isActive: true
-                    }])
-                  } : {})
+            if (nextQ === 3) {
+              setPlayers((prevPlayers) =>
+                prevPlayers.map((p) => ({
+                  ...p,
+                  currentRestTime: 0,
+                  ...(p.isPlaying
+                    ? {
+                        playingSessions: p.playingSessions
+                          .map((s, idx) =>
+                            idx === p.playingSessions.length - 1 && s.isActive
+                              ? { ...s, end: formatQuarterTime(newTime), isActive: false }
+                              : s
+                          )
+                          .concat([
+                            { start: '10:00', end: '', quarter: nextQ, isActive: true },
+                          ]),
+                      }
+                    : {}),
                 }))
               );
             }
-            
-            // Auto-pause at end of any quarter
+
             setIsRunning(false);
-            setGameSpeed(1); // Reset speed
+            setGameSpeed(1);
             setIsQuarterBreak(true);
           }
-          
+
           return newTime;
         });
       }, 1000);
@@ -123,21 +116,22 @@ function App() {
     return () => clearInterval(intervalRef.current);
   }, [isRunning, gameStarted, gameSpeed]);
 
-  // Real time timer - runs continuously once game started (for rest sessions) - pauses during quarter breaks and half-time
+  /* ==== Real-time rest timer ==== */
   useEffect(() => {
     if (gameStarted && !isQuarterBreak) {
       realTimeIntervalRef.current = setInterval(() => {
-        setRealTime(prev => prev + 1);
-        // Update rest time for all players who are resting - only if not in quarter break
-        const currentQ = getCurrentQuarter();
-        const isHalfTime = currentQ === 3 && gameTime <= 1800 && gameTime > 1200; // Between Q2 and Q3
-        
+        const currentQ = computeQuarter(gameTimeRef.current);
+        const isHalfTime =
+          currentQ === 3 &&
+          gameTimeRef.current <= 1800 &&
+          gameTimeRef.current > 1200;
+
         if (!isHalfTime) {
-          setPlayers(prevPlayers => 
-            prevPlayers.map(player => 
-              (!player.isPlaying && gameStarted) 
-                ? { ...player, currentRestTime: player.currentRestTime + gameSpeed }
-                : player
+          setPlayers((prevPlayers) =>
+            prevPlayers.map((p) =>
+              !p.isPlaying && gameStarted
+                ? { ...p, currentRestTime: p.currentRestTime + gameSpeed }
+                : p
             )
           );
         }
@@ -149,557 +143,409 @@ function App() {
     return () => clearInterval(realTimeIntervalRef.current);
   }, [gameStarted, gameSpeed, isQuarterBreak]);
 
-  // Start/stop game timer
+  /* ==== Controls ==== */
   const toggleGame = () => {
-    const newRunningState = !isRunning;
-    setIsRunning(newRunningState);
-    
-    // Reset speed to 1x when starting or stopping
+    const next = !isRunning;
+    setIsRunning(next);
     setGameSpeed(1);
-    
-    // Clear quarter break state when starting
-    if (newRunningState) {
-      setIsQuarterBreak(false);
-    }
-    
-    // If starting the game for the first time
-    if (newRunningState && !gameStarted) {
-      setGameStarted(true);
-    }
+    if (next) setIsQuarterBreak(false);
+    if (next && !gameStarted) setGameStarted(true);
   };
 
-  // Change game speed
-  const changeGameSpeed = (speed) => {
-    setGameSpeed(speed);
-  };
+  const changeGameSpeed = (speed) => setGameSpeed(speed);
 
-  // Put player in game
   const putPlayerIn = (playerId) => {
-    setPlayers(players.map(player => 
-      player.id === playerId 
-        ? { 
-            ...player, 
-            isPlaying: true, 
-            currentSessionStart: gameTime,
-            currentRestTime: 0,
-            hasEverPlayed: true,
-            playingSessions: [...player.playingSessions, {
-              start: formatQuarterTime(gameTime),
-              end: '',
-              quarter: getCurrentQuarter(),
-              isActive: true
-            }]
-          }
-        : player
-    ));
+    setPlayers((arr) =>
+      arr.map((p) =>
+        p.id === playerId
+          ? {
+              ...p,
+              isPlaying: true,
+              currentSessionStart: gameTime,
+              currentRestTime: 0,
+              hasEverPlayed: true,
+              playingSessions: [
+                ...p.playingSessions,
+                {
+                  start: formatQuarterTime(gameTime),
+                  end: '',
+                  quarter: currentQuarter,
+                  isActive: true,
+                },
+              ],
+            }
+          : p
+      )
+    );
   };
 
-  // Take player out of game
   const takePlayerOut = (playerId) => {
-    setPlayers(players.map(player => {
-      if (player.id === playerId && player.isPlaying) {
-        const sessionMinutes = player.currentSessionStart - gameTime;
-        const updatedSessions = [...player.playingSessions];
-        const lastSessionIndex = updatedSessions.length - 1;
-        if (lastSessionIndex >= 0 && updatedSessions[lastSessionIndex].isActive) {
-          updatedSessions[lastSessionIndex] = {
-            ...updatedSessions[lastSessionIndex],
-            end: formatQuarterTime(gameTime),
-            isActive: false
+    setPlayers((arr) =>
+      arr.map((p) => {
+        if (p.id === playerId && p.isPlaying) {
+          const sessionSeconds = p.currentSessionStart - gameTime;
+          const updated = [...p.playingSessions];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].isActive) {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              end: formatQuarterTime(gameTime),
+              isActive: false,
+            };
+          }
+          return {
+            ...p,
+            isPlaying: false,
+            totalMinutes: p.totalMinutes + sessionSeconds,
+            currentSessionStart: 0,
+            currentRestTime: 0,
+            playingSessions: updated,
           };
         }
-
-        return {
-          ...player,
-          isPlaying: false,
-          totalMinutes: player.totalMinutes + sessionMinutes,
-          currentSessionStart: 0,
-          currentRestTime: 0,
-          playingSessions: updatedSessions
-        };
-      }
-      return player;
-    }));
+        return p;
+      })
+    );
   };
 
-  // Calculate consecutive rest time
-  const getConsecutiveRestTime = (player) => {
-    return player.currentRestTime;
-  };
+  const getConsecutiveRestTime = (p) => p.currentRestTime;
 
-  // Reset game with confirmation
   const resetGame = () => {
     if (window.confirm('Are you sure you want to reset the entire game? This will clear all data.')) {
-      setGameTime(2400);
+      setGameTime(TOTAL_GAME_SECONDS);
       setCurrentQuarter(1);
-      setRealTime(0);
       setIsRunning(false);
       setGameStarted(false);
-      setGameSpeed(1); // Reset speed to normal
-      setPlayers(players.map(player => ({
-        ...player,
-        isPlaying: false,
-        totalMinutes: 0,
-        currentSessionStart: 0,
-        currentRestTime: 0,
-        hasEverPlayed: false,
-        playingSessions: [],
-        showRestTime: true
-      })));
+      setGameSpeed(1);
+      setPlayers((arr) =>
+        arr.map((p) => ({
+          ...p,
+          isPlaying: false,
+          totalMinutes: 0,
+          currentSessionStart: 0,
+          currentRestTime: 0,
+          hasEverPlayed: false,
+          playingSessions: [],
+          showRestTime: true,
+        }))
+      );
     }
   };
 
-  // Remove the resetConsecutiveTimes function since it's no longer needed
-
-  // Toggle rest time visibility
   const toggleRestTimeVisibility = (playerId) => {
-    setPlayers(players.map(player => 
-      player.id === playerId 
-        ? { ...player, showRestTime: !player.showRestTime }
-        : player
-    ));
+    setPlayers((arr) =>
+      arr.map((p) => (p.id === playerId ? { ...p, showRestTime: !p.showRestTime } : p))
+    );
   };
 
-  // Add new player
   const addPlayer = () => {
     if (newPlayerName.trim() && newPlayerNumber.trim()) {
-      const newPlayer = {
+      const newP = {
         id: Date.now(),
         name: newPlayerName.trim(),
-        number: parseInt(newPlayerNumber),
+        number: parseInt(newPlayerNumber, 10),
         isPlaying: false,
         totalMinutes: 0,
         currentSessionStart: 0,
         currentRestTime: 0,
         hasEverPlayed: false,
         playingSessions: [],
-        showRestTime: true
+        showRestTime: true,
       };
-      setPlayers([...players, newPlayer]);
+      setPlayers((arr) => [...arr, newP]);
       setNewPlayerName('');
       setNewPlayerNumber('');
       setShowAddPlayer(false);
     }
   };
 
-  // Remove player
   const removePlayer = (playerId) => {
     if (window.confirm('Are you sure you want to remove this player?')) {
-      setPlayers(players.filter(p => p.id !== playerId));
+      setPlayers((arr) => arr.filter((p) => p.id !== playerId));
     }
   };
 
-  // Get last session text for display - simple version showing only entry/exit info
-  const getLastSessionText = (player) => {
-    if (player.playingSessions.length === 0) return '';
-    
-    const lastSession = player.playingSessions[player.playingSessions.length - 1];
-    if (lastSession.isActive) {
-      // Show entry time only
-      return `Q${lastSession.quarter} ${lastSession.start}-`;
-    } else {
-      // Show entry and exit
-      return `Q${lastSession.quarter} ${lastSession.start}-${lastSession.end}`;
-    }
+  const getLastSessionText = (p) => {
+    if (p.playingSessions.length === 0) return '';
+    const last = p.playingSessions[p.playingSessions.length - 1];
+    return last.isActive
+      ? `Q${last.quarter} ${last.start}-`
+      : `Q${last.quarter} ${last.start}-${last.end}`;
   };
 
-  // Get all sessions text for modal - simple version
-  const getAllSessionsText = (player) => {
-    if (player.playingSessions.length === 0) return [];
-    
-    return player.playingSessions.map(session => {
-      if (session.isActive) {
-        return `Q${session.quarter} ${session.start}-`;
-      }
-      return `Q${session.quarter} ${session.start}-${session.end}`;
-    });
+  const getAllSessionsText = (p) => {
+    if (p.playingSessions.length === 0) return [];
+    return p.playingSessions.map((s) =>
+      s.isActive ? `Q${s.quarter} ${s.start}-` : `Q${s.quarter} ${s.start}-${s.end}`
+    );
   };
 
-  // Show session history modal
-  const showPlayerHistory = (player) => {
-    setSelectedPlayer(player);
+  const showPlayerHistory = (p) => {
+    setSelectedPlayer(p);
     setShowSessionHistory(true);
   };
 
   return (
-    <div className="app-container">
-      <div className="max-w-6xl">
-        {/* Header */}
-        <div className="header">
-          <Users className="header-icon" />
-          <h1>Basketball Minutes Tracker</h1>
+    <div className="min-h-screen bg-slate-100">
+      <div className="app-container">
+        <div style={{ padding: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Link to="/schedule">
+            <button style={{ padding: '8px 12px', cursor: 'pointer' }}>
+              Go to Schedule
+            </button>
+          </Link>
+          <Link to="/gym">
+            <button style={{ padding: '8px 12px', cursor: 'pointer' }}>
+              Gym
+            </button>
+          </Link>
+          <Link to="/gym-admin">
+            <button style={{ padding: '8px 12px', cursor: 'pointer' }}>
+              Gym Admin
+            </button>
+          </Link>
         </div>
 
-        {/* Main Timer */}
-        <div className="main-timer">
-          <div className="timer-display">
-            {formatQuarterTime(gameTime)}
-          </div>
-          <div className="quarter-display">
-            Quarter {getCurrentQuarter()}
-            {isQuarterBreak && (
-              <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.9 }}>
-                {getCurrentQuarter() === 3 && gameTime === 1800 ? 'Half Time' : 'Break'}
-              </div>
-            )}
-          </div>
-          
-          {/* Speed Control */}
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '1rem', 
-            marginBottom: '1rem',
-            justifyContent: 'center'
-          }}>
-            <span style={{ fontSize: '0.875rem', opacity: 0.9 }}>Speed:</span>
-            {[1, 2, 4].map(speed => (
-              <button
-                key={speed}
-                onClick={() => changeGameSpeed(speed)}
-                style={{
-                  backgroundColor: gameSpeed === speed ? '#dc2626' : 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  borderRadius: '0.375rem',
-                  padding: '0.25rem 0.75rem',
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {speed}x
-              </button>
-            ))}
+        <div className="max-w-6xl">
+          <div className="header">
+            <Users className="header-icon" />
+            <h1>Basketball Minutes Tracker</h1>
           </div>
 
-          <button onClick={toggleGame} className="start-button">
-            {isRunning ? <Pause size={20} /> : <Play size={20} />}
-            {isRunning ? 'Pause' : 'Start'}
-          </button>
-        </div>
-
-        {/* Control Buttons */}
-        <div className="control-buttons">
-          <button onClick={resetGame} className="reset-button">
-            🔄 Reset Game
-          </button>
-        </div>
-
-        {/* Players Table */}
-        <div className="players-table-container">
-          <table className="players-table">
-            <thead className="table-header">
-              <tr>
-                <th>#</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Total Time</th>
-                <th>Playing Session</th>
-                <th>Rest Session</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody className="table-body">
-              {players.map((player) => (
-                <tr key={player.id} className="table-row">
-                  <td className="table-cell">
-                    <div className="player-number">#{player.number}</div>
-                  </td>
-                  <td className="table-cell">
-                    <div className="player-name">{player.name}</div>
-                    {getLastSessionText(player) && (
-                      <div 
-                        className="session-info"
-                        onClick={() => showPlayerHistory(player)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        {getLastSessionText(player)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="table-cell">
-                    <span className={`status-badge ${player.isPlaying ? 'status-playing' : 'status-bench'}`}>
-                      {player.isPlaying ? 'Playing' : 'Bench'}
-                    </span>
-                  </td>
-                  <td className="table-cell">
-                    <div className="time-display time-total">
-                      {formatTime(player.totalMinutes + (player.isPlaying ? player.currentSessionStart - gameTime : 0))}
-                    </div>
-                  </td>
-                  <td className="table-cell">
-                    <div className={`time-display ${player.isPlaying ? 'time-total' : 'time-playing'}`}>
-                      {player.isPlaying ? formatTime(player.currentSessionStart - gameTime) : '00:00'}
-                    </div>
-                  </td>
-                  <td className="table-cell">
-                    <div className="rest-time-container">
-                      <span className={`time-display ${player.isPlaying ? 'time-playing' : 'time-rest'}`}>
-                        {player.showRestTime ? formatTime(getConsecutiveRestTime(player)) : '••:••'}
-                      </span>
-                      <button
-                        onClick={() => toggleRestTimeVisibility(player.id)}
-                        className="eye-button"
-                      >
-                        {player.showRestTime ? <Eye size={16} /> : <EyeOff size={16} />}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="table-cell">
-                    <button
-                      onClick={() => player.isPlaying ? takePlayerOut(player.id) : putPlayerIn(player.id)}
-                      className={`action-button ${player.isPlaying ? 'button-out' : 'button-in'}`}
-                    >
-                      {player.isPlaying ? 'Out' : 'In'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Manage Players Button */}
-        <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-          <button
-            onClick={() => setShowAddPlayer(true)}
-            className="half-time-button"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            <UserPlus size={16} />
-            Manage Players
-          </button>
-        </div>
-
-        {/* Manage Players Modal */}
-        {showAddPlayer && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50
-          }}>
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '0.5rem',
-              padding: '1.5rem',
-              width: '24rem',
-              maxWidth: '90vw',
-              maxHeight: '80vh',
-              overflowY: 'auto'
-            }}>
-              <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '1rem', color: '#111827' }}>
-                Manage Players
-              </h3>
-              
-              {/* Add new player section */}
-              <div style={{
-                marginBottom: '1.5rem',
-                padding: '1rem',
-                backgroundColor: '#dbeafe',
-                borderRadius: '0.5rem'
-              }}>
-                <h4 style={{ fontWeight: '600', marginBottom: '0.75rem', color: '#1e40af' }}>
-                  Add New Player
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.25rem' }}>
-                      Player Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newPlayerName}
-                      onChange={(e) => setNewPlayerName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.75rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.875rem'
-                      }}
-                      placeholder="Enter name"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.25rem' }}>
-                      Number
-                    </label>
-                    <input
-                      type="number"
-                      value={newPlayerNumber}
-                      onChange={(e) => setNewPlayerNumber(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem 0.75rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '0.375rem',
-                        fontSize: '0.875rem'
-                      }}
-                      placeholder="Enter number"
-                    />
-                  </div>
-                  <button
-                    onClick={addPlayer}
-                    style={{
-                      width: '100%',
-                      backgroundColor: '#2563eb',
-                      color: 'white',
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem'
-                    }}
-                  >
-                    Add Player
-                  </button>
+          <div className="main-timer">
+            <div className="timer-display">{formatQuarterTime(gameTime)}</div>
+            <div className="quarter-display">
+              Quarter {currentQuarter}
+              {isQuarterBreak && (
+                <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.9 }}>
+                  {currentQuarter === 3 && gameTime === 1800 ? 'Half Time' : 'Break'}
                 </div>
-              </div>
+              )}
+            </div>
 
-              {/* Current players list */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <h4 style={{ fontWeight: '600', marginBottom: '0.75rem', color: '#111827' }}>
-                  Current Players
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '10rem', overflowY: 'auto' }}>
-                  {players.map(player => (
-                    <div key={player.id} style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.5rem',
-                      backgroundColor: '#f9fafb',
-                      borderRadius: '0.375rem'
-                    }}>
-                      <span style={{ fontSize: '0.875rem' }}>#{player.number} {player.name}</span>
-                      <button
-                        onClick={() => removePlayer(player.id)}
-                        style={{
-                          color: '#dc2626',
-                          backgroundColor: 'transparent',
-                          border: 'none',
-                          cursor: 'pointer',
-                          padding: '0.25rem'
-                        }}
-                      >
-                        <UserMinus size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.875rem', opacity: 0.9 }}>Speed:</span>
+              {[1, 2, 4].map((speed) => (
                 <button
-                  onClick={() => {
-                    setShowAddPlayer(false);
-                    setNewPlayerName('');
-                    setNewPlayerNumber('');
-                  }}
+                  key={speed}
+                  onClick={() => changeGameSpeed(speed)}
                   style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#6b7280',
+                    backgroundColor: gameSpeed === speed ? '#dc2626' : 'rgba(255,255,255,0.2)',
                     color: 'white',
+                    border: '1px solid rgba(255,255,255,0.3)',
                     borderRadius: '0.375rem',
-                    border: 'none',
-                    cursor: 'pointer'
+                    padding: '0.25rem 0.75rem',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
                   }}
                 >
-                  Done
+                  {speed}x
                 </button>
-              </div>
+              ))}
             </div>
-          </div>
-        )}
 
-        {/* Session History Modal */}
-        {showSessionHistory && selectedPlayer && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50
-          }}>
-            <div style={{
-              backgroundColor: 'white',
-              borderRadius: '0.5rem',
-              padding: '1.5rem',
-              width: '24rem',
-              maxWidth: '90vw'
-            }}>
-              <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '1rem', color: '#111827' }}>
-                Session History - {selectedPlayer.name} (#{selectedPlayer.number})
-              </h3>
-              <div style={{
-                marginBottom: '1rem',
-                padding: '1rem',
-                backgroundColor: '#f9fafb',
-                borderRadius: '0.5rem',
-                maxHeight: '15rem',
-                overflowY: 'auto'
-              }}>
-                {getAllSessionsText(selectedPlayer).length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {getAllSessionsText(selectedPlayer).map((session, index) => (
-                      <div key={index} style={{
-                        fontSize: '0.875rem',
-                        color: '#374151',
-                        paddingBottom: '0.25rem',
-                        borderBottom: index < getAllSessionsText(selectedPlayer).length - 1 ? '1px solid #e5e7eb' : 'none'
-                      }}>
-                        {session}
+            <button onClick={toggleGame} className="start-button">
+              {isRunning ? <Pause size={20} /> : <Play size={20} />}
+              {isRunning ? 'Pause' : 'Start'}
+            </button>
+          </div>
+
+          <div className="control-buttons">
+            <button onClick={resetGame} className="reset-button">🔄 Reset Game</button>
+          </div>
+
+          <div className="players-table-container">
+            <table className="players-table">
+              <thead className="table-header">
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Total Time</th>
+                  <th>Playing Session</th>
+                  <th>Rest Session</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody className="table-body">
+                {players.map((p) => (
+                  <tr key={p.id} className="table-row">
+                    <td className="table-cell">
+                      <div className="player-number">#{p.number}</div>
+                    </td>
+                    <td className="table-cell">
+                      <div className="player-name">{p.name}</div>
+                      {getLastSessionText(p) && (
+                        <div
+                          className="session-info"
+                          onClick={() => showPlayerHistory(p)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {getLastSessionText(p)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      <span className={`status-badge ${p.isPlaying ? 'status-playing' : 'status-bench'}`}>
+                        {p.isPlaying ? 'Playing' : 'Bench'}
+                      </span>
+                    </td>
+                    <td className="table-cell">
+                      <div className="time-display time-total">
+                        {formatTime(p.totalMinutes + (p.isPlaying ? p.currentSessionStart - gameTime : 0))}
+                      </div>
+                    </td>
+                    <td className="table-cell">
+                      <div className={`time-display ${p.isPlaying ? 'time-total' : 'time-playing'}`}>
+                        {p.isPlaying ? formatTime(p.currentSessionStart - gameTime) : '00:00'}
+                      </div>
+                    </td>
+                    <td className="table-cell">
+                      <div className="rest-time-container">
+                        <span className={`time-display ${p.isPlaying ? 'time-playing' : 'time-rest'}`}>
+                          {p.showRestTime ? formatTime(getConsecutiveRestTime(p)) : '••:••'}
+                        </span>
+                        <button onClick={() => toggleRestTimeVisibility(p.id)} className="eye-button">
+                          {p.showRestTime ? <Eye size={16} /> : <EyeOff size={16} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="table-cell">
+                      <button
+                        onClick={() => (p.isPlaying ? takePlayerOut(p.id) : putPlayerIn(p.id))}
+                        className={`action-button ${p.isPlaying ? 'button-out' : 'button-in'}`}
+                      >
+                        {p.isPlaying ? 'Out' : 'In'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+            <button
+              onClick={() => setShowAddPlayer(true)}
+              className="half-time-button"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <UserPlus size={16} />
+              Manage Players
+            </button>
+          </div>
+
+          {showAddPlayer && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+              <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '1.5rem', width: '24rem', maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '1rem', color: '#111827' }}>
+                  Manage Players
+                </h3>
+
+                <div style={{ marginBottom: '1.5rem', padding: '1rem', backgroundColor: '#dbeafe', borderRadius: '0.5rem' }}>
+                  <h4 style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#1e40af' }}>Add New Player</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.25rem' }}>
+                        Player Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newPlayerName}
+                        onChange={(e) => setNewPlayerName(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+                        placeholder="Enter name"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.25rem' }}>
+                        Number
+                      </label>
+                      <input
+                        type="number"
+                        value={newPlayerNumber}
+                        onChange={(e) => setNewPlayerNumber(e.target.value)}
+                        style={{ width: '100%', padding: '0.5rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.875rem' }}
+                        placeholder="Enter number"
+                      />
+                    </div>
+                    <button
+                      onClick={addPlayer}
+                      style={{ width: '100%', backgroundColor: '#2563eb', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.375rem', border: 'none', cursor: 'pointer', fontSize: '0.875rem' }}
+                    >
+                      Add Player
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h4 style={{ fontWeight: 600, marginBottom: '0.75rem', color: '#111827' }}>Current Players</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '10rem', overflowY: 'auto' }}>
+                    {players.map((p) => (
+                      <div
+                        key={p.id}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem', backgroundColor: '#f9fafb', borderRadius: '0.375rem' }}
+                      >
+                        <span style={{ fontSize: '0.875rem' }}>#{p.number} {p.name}</span>
+                        <button
+                          onClick={() => removePlayer(p.id)}
+                          style={{ color: '#dc2626', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', padding: '0.25rem' }}
+                        >
+                          <UserMinus size={16} />
+                        </button>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div style={{
-                    fontSize: '0.875rem',
-                    color: '#6b7280',
-                    textAlign: 'center',
-                    padding: '1rem'
-                  }}>
-                    No sessions yet
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => {
-                    setShowSessionHistory(false);
-                    setSelectedPlayer(null);
-                  }}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: '#6b7280',
-                    color: 'white',
-                    borderRadius: '0.375rem',
-                    border: 'none',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Close
-                </button>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => { setShowAddPlayer(false); setNewPlayerName(''); setNewPlayerNumber(''); }}
+                    style={{ padding: '0.5rem 1rem', backgroundColor: '#6b7280', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer' }}
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {showSessionHistory && selectedPlayer && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+              <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', padding: '1.5rem', width: '24rem', maxWidth: '90vw' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '1rem', color: '#111827' }}>
+                  Session History - {selectedPlayer.name} (#{selectedPlayer.number})
+                </h3>
+                <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', maxHeight: '15rem', overflowY: 'auto' }}>
+                  {getAllSessionsText(selectedPlayer).length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {getAllSessionsText(selectedPlayer).map((txt, idx) => (
+                        <div key={idx} style={{ fontSize: '0.875rem', color: '#374151', paddingBottom: '0.25rem', borderBottom: idx < getAllSessionsText(selectedPlayer).length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                          {txt}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.875rem', color: '#6b7280', textAlign: 'center', padding: '1rem' }}>
+                      No sessions yet
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => { setShowSessionHistory(false); setSelectedPlayer(null); }}
+                    style={{ padding: '0.5rem 1rem', backgroundColor: '#6b7280', color: 'white', borderRadius: '0.375rem', border: 'none', cursor: 'pointer' }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export default App;
+export default MinutesTracker;

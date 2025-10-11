@@ -1,0 +1,15 @@
+[
+  {
+    "id": "seed-1",
+    "name": "Push Up",
+    "muscleGroup": "Chest",
+    "image": "/images/exercises/pushup.jpg"
+  },
+  {
+    "id": "seed-2",
+    "name": "Pull Up",
+    "muscleGroup": "Back",
+    "image": "/images/exercises/pullup.jpg"
+  }
+  // ... add more seed exercises
+]
