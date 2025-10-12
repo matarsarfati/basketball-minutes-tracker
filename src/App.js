@@ -5,7 +5,7 @@ import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus } from 'lucide-rea
 import { Link } from 'react-router-dom';
 import './App.css';
 import GymPage from './pages/GymPage'; // Update to use the new GymPage
-import './migrateData';
+
 
 /* ==== Constants ==== */
 const QUARTER_LENGTH = 600;

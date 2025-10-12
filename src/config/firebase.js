@@ -19,5 +19,14 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+console.log('Firebase config:', {
+  projectId: db.app.options.projectId,
+  databaseURL: db.app.options.databaseURL
+});
+
+console.log('Firebase config loaded:', db ? 'Successfully' : 'Failed');
+console.log('Firebase configuration loaded:', db ? 'Firestore initialized successfully' : 'Firestore initialization failed');
+console.log('Firestore database instance:', db);
+
 // Export everything needed
 export { app, db, storage };

@@ -51,9 +51,9 @@ code {
   overflow: visible; /* Allow rows to expand */
 }
 
-/* Grid layout based on rows */
 .muscle-group-row[data-rows="1"] {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-rows: repeat(1, 1fr);
 }
 
 .muscle-group-row[data-rows="2"] {
@@ -265,10 +265,11 @@ code {
   transition: all 0.2s, transform 0.2s, box-shadow 0.2s;
   width: 150px;
   min-width: 150px;
-  max-width: 150px;
+  max-width: 200px;
   touch-action: none;  /* Enable dragging on touch devices */
   cursor: grab;
   transition: transform 0.2s, box-shadow 0.2s;
+  height: 100%;
 }
 
 .exercise-card:active {

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 const ExerciseLibrarySettings = ({ 
   isOpen,
   onClose,
-  muscleGroups, 
+  muscleGroups,  // This is an ARRAY of {name, rows}
   visibleGroups, 
   onToggleVisibility, 
   onMoveGroup,
@@ -24,8 +24,8 @@ const ExerciseLibrarySettings = ({
     }
   };
 
-  const handleRowsChange = (groupId, rows) => {
-    onUpdateGroupRows(groupId, Number(rows));
+  const handleRowsChange = (groupName, rows) => {
+    onUpdateGroupRows(groupName, Number(rows));
   };
 
   const modalStyles = {
@@ -59,56 +59,60 @@ const ExerciseLibrarySettings = ({
       <div style={modalStyles}>
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-semibold">Muscle Group Settings</h3>
-          <button onClick={onClose} className="icon-button">
-            <span className="icon">×</span>
-          </button>
+          <button onClick={onClose} className="text-2xl hover:bg-gray-100 px-2 rounded">×</button>
         </div>
         <div className="space-y-2">
-          {Object.entries(muscleGroups).map(([groupId, group], index) => (
-            <div key={groupId} className="flex flex-col p-2 bg-gray-50 rounded mb-2">
+          {Array.isArray(muscleGroups) && muscleGroups.map((group, index) => (
+            <div key={group.name} className="flex flex-col p-2 bg-gray-50 rounded mb-2">
               <div className="flex items-center justify-between">
-                <span>{group.name}</span>
+                <span className="font-medium">{group.name}</span>
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => onToggleVisibility(groupId)}
-                    className="icon-button"
+                    onClick={() => onToggleVisibility(group.name)}
+                    className="p-1 hover:bg-gray-200 rounded"
+                    title={visibleGroups.includes(group.name) ? "Hide group" : "Show group"}
                   >
-                    <span className="icon">{visibleGroups.includes(groupId) ? "👁" : "○"}</span>
+                    <span className="text-lg">
+                      {visibleGroups.includes(group.name) ? "👁" : "○"}
+                    </span>
                   </button>
                   <div className="flex space-x-1">
                     <button
                       onClick={() => onMoveGroup(index, 'up')}
                       disabled={index === 0}
-                      className="icon-button disabled:opacity-50"
+                      className="p-1 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move up"
                     >
-                      <span className="icon">↑</span>
+                      <span className="text-lg">↑</span>
                     </button>
                     <button
                       onClick={() => onMoveGroup(index, 'down')}
-                      disabled={index === Object.keys(muscleGroups).length - 1}
-                      className="icon-button disabled:opacity-50"
+                      disabled={index === muscleGroups.length - 1}
+                      className="p-1 hover:bg-gray-200 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move down"
                     >
-                      <span className="icon">↓</span>
+                      <span className="text-lg">↓</span>
                     </button>
                   </div>
                   <button
                     onClick={() => {
-                      if (window.confirm(`Are you sure you want to delete "${group.name}" group?`)) {
-                        onDeleteGroup(groupId);
+                      if (window.confirm(`Delete "${group.name}" group? All exercises in this group will be moved to "Other".`)) {
+                        onDeleteGroup(group.name);
                       }
                     }}
                     className="p-1 hover:bg-red-100 text-red-600 rounded"
+                    title="Delete group"
                   >
                     🗑️
                   </button>
                 </div>
               </div>
               <div className="flex items-center gap-4 mt-2">
-                <span className="w-24">Rows:</span>
+                <span className="text-sm text-gray-600">Rows:</span>
                 <select 
                   value={group.rows}
-                  onChange={(e) => handleRowsChange(groupId, e.target.value)}
-                  className="border rounded px-2 py-1"
+                  onChange={(e) => handleRowsChange(group.name, e.target.value)}
+                  className="border rounded px-2 py-1 text-sm"
                 >
                   <option value="1">1 Row</option>
                   <option value="2">2 Rows</option>
@@ -130,12 +134,22 @@ const ExerciseLibrarySettings = ({
                 placeholder="Group name"
                 className="flex-1 px-2 py-1 border rounded"
                 onKeyPress={(e) => e.key === 'Enter' && handleAddGroup()}
+                autoFocus
               />
-              <button onClick={handleAddGroup} className="icon-button">
-                <span className="icon">+</span>
+              <button 
+                onClick={handleAddGroup} 
+                className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                ✓
               </button>
-              <button onClick={() => setIsAdding(false)} className="icon-button">
-                <span className="icon">×</span>
+              <button 
+                onClick={() => {
+                  setIsAdding(false);
+                  setNewGroupName('');
+                }} 
+                className="px-3 py-1 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                ✗
               </button>
             </div>
           ) : (
@@ -143,8 +157,7 @@ const ExerciseLibrarySettings = ({
               onClick={() => setIsAdding(true)}
               className="w-full mt-4 p-2 text-blue-500 border border-blue-500 rounded hover:bg-blue-50"
             >
-              <span className="icon mr-1">+</span>
-              Add Muscle Group
+              + Add New Muscle Group
             </button>
           )}
         </div>
