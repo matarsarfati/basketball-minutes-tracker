@@ -17,7 +17,7 @@ const CompactRepTypeSelect = ({ value, onChange, disabled }) => (
 
 const PlanBuilderModal = ({ 
   isOpen, 
-  onDelete, // Changed from onClose
+  onClose, 
   plan, 
   onUpdatePlan, 
   isEditMode, 
@@ -408,8 +408,8 @@ const PlanBuilderModal = ({
   if (isPrintMode) {
     return (
       <div className="fixed inset-0 z-50 bg-white overflow-auto">
-        {/* Compact header */}
-        <div className="absolute top-6 left-8 z-10">
+        {/* Header */}
+        <div className="fixed top-6 left-8 z-10">
           <h1 className="text-3xl font-bold mb-1">Workout Plan</h1>
           <div className="text-base text-gray-600">
             {new Date().toLocaleDateString('en-US', { 
@@ -428,38 +428,39 @@ const PlanBuilderModal = ({
           ← Exit Print Mode
         </button>
 
-        <div className="max-w-7xl mx-auto px-12 pt-24 pb-6">
+        <div className="max-w-7xl mx-auto px-8 pt-24 pb-6">
           {rows.map((row, rowIndex) => (
-            <div key={rowIndex} className="mb-8">
-              <div className="grid grid-cols-4 gap-6 mb-6">
+            <div key={rowIndex} className="mb-4">
+              <div className="grid grid-cols-4 gap-3">
                 {row.map((exercise, index) => (
                   <div 
                     key={index}
-                    className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm"
+                    className="bg-white border rounded-lg p-3"
                   >
-                    <div className="w-full h-52 flex items-center justify-center mb-3 bg-gray-50 rounded-lg overflow-hidden">
+                    <div className="aspect-w-1 aspect-h-1 mb-2">
                       <img
                         src={exercise.imageUrl}
                         alt={exercise.name}
-                        className="max-w-full max-h-full object-contain"
+                        className="w-full h-32 object-contain"
+                        loading="lazy"
                       />
                     </div>
 
-                    <h3 className="text-lg font-bold mb-2 text-gray-900 text-center min-h-[2.5rem] flex items-center justify-center">
+                    <h3 className="text-base font-bold mb-1 text-center">
                       {exercise.name}
                     </h3>
 
-                    <div className="text-center mb-2">
-                      <span className="text-3xl font-bold text-gray-800">
+                    <div className="text-center">
+                      <span className="text-xl font-bold">
                         {exercise.sets || '-'} × {exercise.reps || '-'}
                       </span>
-                      <span className="text-xl text-gray-600 ml-2">
+                      <span className="text-sm ml-1">
                         {exercise.repType || 'reps'}
                       </span>
                     </div>
 
                     {exercise.notes && (
-                      <div className="text-center text-base text-gray-600 italic mt-2">
+                      <div className="text-sm text-gray-600 italic mt-1 text-center">
                         {exercise.notes}
                       </div>
                     )}
@@ -468,12 +469,12 @@ const PlanBuilderModal = ({
               </div>
 
               {rowIndex < rows.length - 1 && (
-                <div className="flex items-center justify-center my-6">
-                  <div className="flex-1 border-t-2 border-gray-300"></div>
-                  <span className="px-4 text-lg text-gray-400 font-semibold">
+                <div className="flex items-center justify-center my-3">
+                  <div className="flex-1 border-t border-gray-200"></div>
+                  <span className="px-4 text-sm text-gray-400">
                     Section Break
                   </span>
-                  <div className="flex-1 border-t-2 border-gray-300"></div>
+                  <div className="flex-1 border-t border-gray-200"></div>
                 </div>
               )}
             </div>
@@ -580,10 +581,15 @@ const PlanBuilderModal = ({
                   {isEditMode ? '✏️ Edit Mode' : '👀 View Mode'}
                 </label>
               </div>
-              <button
-                onClick={() => onDelete()}  // Changed from onClose
-                className="p-2 hover:bg-gray-100 rounded text-red-500"
-                title="Delete plan"
+              <button 
+                onClick={() => {
+                  if (plan.length > 0) {
+                    // Save the plan before closing if it contains exercises
+                    onUpdatePlan(plan);
+                  }
+                  onClose();
+                }} 
+                className="icon-button"
               >
                 ×
               </button>
