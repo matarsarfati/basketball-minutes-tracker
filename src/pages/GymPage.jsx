@@ -70,6 +70,7 @@ const GymPage = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [visibleGroups, setVisibleGroups] = useState([]);
+  const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
 
   // Add safety check helper
   const isValidGroup = useCallback((group) => {
@@ -494,14 +495,37 @@ const GymPage = () => {
     input.click();
   };
 
-  const handleDragStart = (e, exercise) => {
-    setDraggedExercise(exercise);
+  const handleDragStart = (e, exercise, index) => {
+    setDraggedExercise({ ...exercise, originalIndex: index });
     e.target.classList.add('dragging');
   };
 
   const handleDragEnd = (e) => {
     e.currentTarget.classList.remove('dragging');
     setDraggedExercise(null);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    setDragTargetIndex(index);
+  };
+
+  const handleDrop = (e, muscleGroup) => {
+    e.preventDefault();
+    if (!draggedExercise || dragTargetIndex === null) return;
+
+    const updatedExercises = [...customExercises];
+    const oldIndex = updatedExercises.findIndex(ex => ex.id === draggedExercise.id);
+    
+    // Remove from old position
+    const [movedExercise] = updatedExercises.splice(oldIndex, 1);
+    
+    // Insert at new position
+    updatedExercises.splice(dragTargetIndex, 0, movedExercise);
+    
+    setCustomExercises(updatedExercises);
+    setDraggedExercise(null);
+    setDragTargetIndex(null);
   };
 
   const handleExerciseClick = (exercise) => {
@@ -614,11 +638,11 @@ const GymPage = () => {
             onClick={() => setIsEditMode(!isEditMode)}
             className={`px-4 py-2 rounded-lg ${
               isEditMode 
-                ? 'bg-green-500 hover:bg-green-600'
+                ? 'bg-green-500 hover:bg-green-600 text-white'
                 : 'bg-gray-100 hover:bg-gray-200'
             } text-sm`}
           >
-            {isEditMode ? 'Done Editing' : '✏️ Edit Order'}
+            {isEditMode ? 'Done' : 'Edit'}
           </button>
           <button
             onClick={createNewPlan}
@@ -654,15 +678,29 @@ const GymPage = () => {
                   {group.name}
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {groupExercises.map(exercise => (
+                  {groupExercises.map((exercise, index) => (
                     <div 
                       key={exercise.id} 
-                      className="cursor-pointer hover:opacity-80 transition bg-white rounded-lg shadow-sm p-2"
-                      onClick={() => handleExerciseClick(exercise)}
+                      className={`relative cursor-pointer hover:opacity-80 transition bg-white rounded-lg shadow-sm p-2
+                        ${isEditMode && dragTargetIndex === index ? 'border-2 border-blue-500' : ''}`}
+                      onClick={() => !isEditMode && handleExerciseClick(exercise)}
                       draggable={isEditMode}
-                      onDragStart={(e) => handleDragStart(e, exercise)}
+                      onDragStart={(e) => handleDragStart(e, exercise, index)}
                       onDragEnd={handleDragEnd}
+                      onDragOver={(e) => isEditMode && handleDragOver(e, index)}
+                      onDrop={(e) => isEditMode && handleDrop(e, group.name)}
                     >
+                      {isEditMode && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteExercise(exercise.id);
+                          }}
+                          className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+                        >
+                          ×
+                        </button>
+                      )}
                       <img 
                         src={exercise.imageUrl} 
                         alt={exercise.name} 
