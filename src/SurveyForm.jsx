@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import "./SurveyForm.css";
 
 const STORE_KEY = "practiceSurveysV1";
@@ -122,6 +122,8 @@ const QUESTION_LABELS = {
 
 export default function SurveyForm() {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
+
   const [store, setStore] = useState(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -133,239 +135,110 @@ export default function SurveyForm() {
       return {};
     }
   });
-  const [rosterNames, setRosterNames] = useState(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem(ROSTER_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed)
-        ? parsed
-            .map(p => (typeof p === "string" ? p : p?.name || ""))
-            .filter(Boolean)
-        : [];
-    } catch {
-      return [];
-    }
-  });
 
-  const [selectedName, setSelectedName] = useState("");
-  const [newName, setNewName] = useState("");
+  const [presentPlayers, setPresentPlayers] = useState([]);
+  const [selectedPlayer, setSelectedPlayer] = useState("");
   const [rpe, setRpe] = useState(null);
   const [legs, setLegs] = useState(null);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
-  const [, setSuccess] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [justAddedName, setJustAddedName] = useState(false);
-
-  const resetTimerRef = useRef(null);
-
-  const resetForm = useCallback(() => {
-    if (resetTimerRef.current) {
-      clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = null;
-    }
-    setSelectedName("");
-    setNewName("");
-    setJustAddedName(false);
-    setRpe(null);
-    setLegs(null);
-    setNotes("");
-    setError("");
-    setSuccess(false);
-    setSubmitted(false);
-  }, [resetTimerRef]);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     try {
-      localStorage.setItem(ROSTER_KEY, JSON.stringify(rosterNames));
-    } catch (err) {
-      console.error("Failed to save", ROSTER_KEY, err);
-    }
-  }, [rosterNames]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(store));
-    } catch (err) {
-      console.error("Failed to save", STORE_KEY, err);
-    }
-  }, [store]);
-
-  useEffect(() => {
-    return () => {
-      if (resetTimerRef.current) {
-        clearTimeout(resetTimerRef.current);
+      const stored = localStorage.getItem(`surveyPlayers_${sessionId}`);
+      if (stored) {
+        const players = JSON.parse(stored);
+        setPresentPlayers(players);
+        if (players.length > 0) {
+          setSelectedPlayer(players[0].name);
+        }
       }
-    };
-  }, [resetTimerRef]);
-
-  const sessionEntries = useMemo(() => store[sessionId] || {}, [store, sessionId]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    resetForm();
-  }, [resetForm, sessionId]);
-
-  const handleSelectChange = event => {
-    const value = event.target.value;
-    setSuccess(false);
-    setError("");
-    setJustAddedName(false);
-    setSubmitted(false);
-    if (resetTimerRef.current) {
-      clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = null;
+    } catch (err) {
+      console.error("Failed to load present players:", err);
     }
-    if (value === NEW_PLAYER_VALUE) {
-      setSelectedName(NEW_PLAYER_VALUE);
-      setNewName("");
+  }, [sessionId]);
+
+  // Add completion check
+  const checkCompletion = useCallback(() => {
+    if (!presentPlayers.length) return;
+
+    const responses = store[sessionId] || {};
+    const allResponded = presentPlayers.every(
+      player => responses[player.name]
+    );
+
+    if (allResponded) {
+      // Return to practice page after short delay
+      setTimeout(() => {
+        navigate(`/practice/${sessionId}`);
+      }, 1500);
+    }
+  }, [presentPlayers, store, sessionId, navigate]);
+
+  // Check completion after each submission
+  useEffect(() => {
+    if (showSuccess) {
+      checkCompletion();
+    }
+  }, [showSuccess, checkCompletion]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!selectedPlayer || rpe === null || legs === null) return;
+
+    try {
+      // Save survey response
+      const surveys = { ...store };
+      surveys[sessionId] = {
+        ...surveys[sessionId],
+        [selectedPlayer]: {
+          rpe,
+          legs,
+          notes: notes.trim(),
+          savedAt: new Date().toISOString()
+        }
+      };
+
+      localStorage.setItem(STORE_KEY, JSON.stringify(surveys));
+      setStore(surveys);
+
+      // Reset form
       setRpe(null);
       setLegs(null);
-      setNotes("");
-      return;
+      setNotes('');
+      setSelectedPlayer('');
+      setShowSuccess(true);
+
+    } catch (err) {
+      console.error('Failed to save survey:', err);
+      setError('Failed to save response. Please try again.');
     }
-    setSelectedName(value);
-    const previous = sessionEntries[value];
-    setRpe(previous?.rpe ?? null);
-    setLegs(previous?.legs ?? null);
-    setNotes(previous?.notes ?? "");
   };
 
-  const handleAddNewPlayer = () => {
-    const trimmed = newName.trim();
-    if (!trimmed) {
-      setError("Please enter a name for the new player.");
-      return;
+  const handlePlayerChange = (e) => {
+    const playerName = e.target.value;
+    setSelectedPlayer(playerName);
+
+    try {
+      const stored = localStorage.getItem(STORE_KEY);
+      if (stored) {
+        const surveys = JSON.parse(stored);
+        const response = surveys[sessionId]?.[playerName];
+        if (response) {
+          setRpe(response.rpe);
+          setLegs(response.legs);
+          setNotes(response.notes || "");
+        } else {
+          setRpe(null);
+          setLegs(null);
+          setNotes("");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load existing response:", err);
     }
-    if (rosterNames.includes(trimmed)) {
-      setError("That name already exists in the list.");
-      return;
-    }
-    if (resetTimerRef.current) {
-      clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = null;
-    }
-    const updatedRoster = [...rosterNames, trimmed];
-    updatedRoster.sort((a, b) => a.localeCompare(b, "he"));
-    setRosterNames(updatedRoster);
-    setSelectedName(trimmed);
-    setNewName("");
-    setError("");
-    setJustAddedName(true);
-    setSuccess(false);
-    setSubmitted(false);
-    setRpe(null);
-    setLegs(null);
-    setNotes("");
   };
-
-  const handleSubmit = event => {
-    event.preventDefault();
-    setError("");
-    setSuccess(false);
-
-    const nameToUse = selectedName === NEW_PLAYER_VALUE ? newName.trim() : selectedName.trim();
-
-    if (!nameToUse) {
-      setError("Please choose a player name.");
-      return;
-    }
-    if (!sessionId) {
-      setError("The link is missing a session identifier.");
-      return;
-    }
-
-    if (rpe === null) {
-      setError("Please select a session intensity value.");
-      return;
-    }
-
-    if (legs === null) {
-      setError("Please select how heavy your legs feel.");
-      return;
-    }
-
-    const numericRpe = Number(rpe);
-    const numericLegs = Number(legs);
-    if (Number.isNaN(numericRpe) || numericRpe < 1 || numericRpe > 10) {
-      setError("Please set an RPE value between 1 and 10.");
-      return;
-    }
-    if (Number.isNaN(numericLegs) || numericLegs < 1 || numericLegs > 10) {
-      setError("Please set a legs value between 1 and 10.");
-      return;
-    }
-
-    if (!rosterNames.includes(nameToUse)) {
-      const updatedRoster = [...rosterNames, nameToUse];
-      updatedRoster.sort((a, b) => a.localeCompare(b, "he"));
-      setRosterNames(updatedRoster);
-    }
-
-    const updatedSession = {
-      ...sessionEntries,
-      [nameToUse]: {
-        rpe: numericRpe,
-        legs: numericLegs,
-        notes,
-        savedAt: new Date().toISOString(),
-      },
-    };
-
-    setStore(prev => ({
-      ...prev,
-      [sessionId]: updatedSession,
-    }));
-
-    setSelectedName("");
-    setNewName("");
-    setRpe(null);
-    setLegs(null);
-    setNotes("");
-    setSubmitted(true);
-    setJustAddedName(false);
-    if (document.activeElement?.blur) {
-      document.activeElement.blur();
-    }
-    if (resetTimerRef.current) {
-      clearTimeout(resetTimerRef.current);
-    }
-    resetTimerRef.current = setTimeout(() => {
-      resetTimerRef.current = null;
-      resetForm();
-    }, 2000);
-  };
-
-  if (!sessionId) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div
-          style={{
-            maxWidth: 420,
-            width: "100%",
-            background: "rgba(255,255,255,0.95)",
-            borderRadius: 12,
-            border: "1px solid #e5e7eb",
-            padding: 24,
-            textAlign: "center",
-          }}
-        >
-          <h2>Missing session identifier</h2>
-          <p>Please contact the staff for an updated link.</p>
-          <Link to="/schedule">Back to schedule</Link>
-        </div>
-      </div>
-    );
-  }
-
-  const showRosterSelect = rosterNames.length > 0;
-  const existingSubmission = selectedName && sessionEntries[selectedName];
-  const trimmedSelectedName = typeof selectedName === "string" ? selectedName.trim() : "";
-  const hasPlayerSelected = trimmedSelectedName && trimmedSelectedName !== NEW_PLAYER_VALUE;
-  const canSubmit = Boolean(hasPlayerSelected && rpe !== null && legs !== null);
 
   const renderControl = (type, currentValue, setter) => {
     const emojiFor = type === "rpe" ? rpeEmoji : legsEmoji;
@@ -373,14 +246,9 @@ export default function SurveyForm() {
     const hasValue = typeof currentValue === "number" && currentValue >= 1 && currentValue <= 10;
     const displayValue = hasValue ? currentValue : 5;
 
-    const applyValue = newValue => {
-      if (resetTimerRef.current) {
-        clearTimeout(resetTimerRef.current);
-        resetTimerRef.current = null;
-      }
+    const applyValue = (newValue) => {
       setter(newValue);
-      setSuccess(false);
-      setSubmitted(false);
+      setShowSuccess(false);
       setError("");
     };
 
@@ -404,7 +272,7 @@ export default function SurveyForm() {
                   max={10}
                   step={1}
                   value={displayValue}
-                  onChange={event => applyValue(Number(event.target.value))}
+                  onChange={(event) => applyValue(Number(event.target.value))}
                   style={{
                     position: "absolute",
                     top: -12,
@@ -423,9 +291,7 @@ export default function SurveyForm() {
             </div>
           </div>
           <div className="scaleSelected">
-            <span className="tokenEmoji">
-              {emojiFor(displayValue)}
-            </span>
+            <span className="tokenEmoji">{emojiFor(displayValue)}</span>
             <span style={{ marginLeft: 6, fontSize: 12, color: hasValue ? "#374151" : "#94a3b8" }}>
               {hasValue
                 ? `Selected: ${displayValue} — ${shortFor(displayValue)}`
@@ -433,7 +299,7 @@ export default function SurveyForm() {
             </span>
           </div>
           <div className="scaleRow">
-            {LEVELS.map(level => {
+            {LEVELS.map((level) => {
               const selected = hasValue && level === displayValue;
               return (
                 <button
@@ -455,186 +321,59 @@ export default function SurveyForm() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f1f5f9",
-        padding: "32px 16px",
-        boxSizing: "border-box",
-      }}
-    >
-      <div className="survey-wrap">
-        {submitted ? (
+    <div className="survey-wrap">
+      <div className="survey-card">
+        <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
+
+        {showSuccess ? (
           <div className="success-wrap">
             <div className="success-title">Thanks!</div>
             <p>Hand the phone to the next player.</p>
           </div>
         ) : (
-          <div className="survey-card">
-            <header style={{ textAlign: "center", marginBottom: 16 }}>
-              <h1 style={{ margin: 0, fontSize: 24 }}>Training Feedback Form</h1>
-              <p style={{ margin: "8px 0 0", color: "#475569" }}>
-                Choose your name and rate today's session.
-              </p>
-            </header>
-
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div>
-                <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Player</label>
-                {showRosterSelect ? (
-                  <select
-                    value={selectedName || ""}
-                    onChange={handleSelectChange}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #cbd5f5",
-                      background: "#fff",
-                      fontSize: 15,
-                    }}
-                  >
-                    <option value="">Choose a player...</option>
-                    {rosterNames.map(name => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                    <option value={NEW_PLAYER_VALUE}>Add new player...</option>
-                  </select>
-                ) : (
-                  <div style={{ fontSize: 14, color: "#475569" }}>
-                    No players found. Please add a name below.
-                  </div>
-                )}
-              </div>
-
-              {(selectedName === NEW_PLAYER_VALUE || (!showRosterSelect && rosterNames.length === 0)) && (
-                <div
-                  style={{
-                    border: "1px solid #cbd5f5",
-                    borderRadius: 10,
-                    padding: 12,
-                    background: "#f8fafc",
-                  }}
-                >
-                  <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Add new player name</label>
-                  <input
-                    type="text"
-                    value={newName}
-                    onChange={e => {
-                      setNewName(e.target.value);
-                      setSuccess(false);
-                      setError("");
-                      setSubmitted(false);
-                      if (resetTimerRef.current) {
-                        clearTimeout(resetTimerRef.current);
-                        resetTimerRef.current = null;
-                      }
-                    }}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #cbd5f5",
-                      background: "#fff",
-                      fontSize: 15,
-                      marginBottom: 8,
-                    }}
-                    placeholder="Enter full name"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddNewPlayer}
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid #10b981",
-                      background: "#22c55e",
-                      color: "#fff",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      width: "100%",
-                    }}
-                  >
-                    Save new player
-                  </button>
-                  {justAddedName && (
-                    <div style={{ marginTop: 6, fontSize: 12, color: "#10b981" }}>
-                      Player added. You can now submit feedback.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {renderControl("rpe", rpe, setRpe)}
-
-              {renderControl("legs", legs, setLegs)}
-
-              <div>
-                <label style={{ display: "block", marginBottom: 6, fontWeight: 600 }}>Notes (optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={e => {
-                    setNotes(e.target.value);
-                    setSuccess(false);
-                    setSubmitted(false);
-                    setError("");
-                    if (resetTimerRef.current) {
-                      clearTimeout(resetTimerRef.current);
-                      resetTimerRef.current = null;
-                    }
-                  }}
-                  rows={3}
-                  placeholder="Share anything about the session you'd like the staff to know."
-                  style={{
-                    width: "100%",
-                    padding: 12,
-                    borderRadius: 10,
-                    border: "1px solid #cbd5f5",
-                    background: "#fff",
-                    resize: "vertical",
-                  }}
-                />
-              </div>
-
-              {error && (
-                <div style={{ color: "#dc2626", fontWeight: 600, textAlign: "center" }}>{error}</div>
-              )}
-
-              {existingSubmission && !submitted && (
-                <div
-                  style={{
-                    textAlign: "center",
-                    background: "#e0e7ff",
-                    border: "1px solid #c7d2fe",
-                    borderRadius: 12,
-                    padding: 12,
-                    color: "#3730a3",
-                    fontSize: 13,
-                  }}
-                >
-                  Your previous response was loaded. Feel free to update and resubmit.
-                </div>
-              )}
-
-              <button
-                type="submit"
-                className="survey-primary"
-                disabled={!canSubmit}
-                style={{
-                  opacity: canSubmit ? 1 : 0.5,
-                  cursor: canSubmit ? "pointer" : "not-allowed",
-                }}
+          <form onSubmit={handleSubmit}>
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">Select Player</label>
+              <select
+                value={selectedPlayer}
+                onChange={handlePlayerChange}
+                className="w-full p-2 border rounded"
+                required
               >
-                Submit
-              </button>
-            </form>
+                <option value="">Choose player...</option>
+                {presentPlayers.map((player) => (
+                  <option key={player.id} value={player.name}>
+                    {player.name} {player.number ? `#${player.number}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <footer style={{ marginTop: 24, textAlign: "center", fontSize: 12, color: "#94a3b8" }}>
-              Your response is private and not visible to other players.
-            </footer>
-          </div>
+            {renderControl("rpe", rpe, setRpe)}
+
+            {renderControl("legs", legs, setLegs)}
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Notes (optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={3}
+                placeholder="Share anything about the session you'd like the staff to know."
+                className="w-full p-2 border rounded"
+              />
+            </div>
+
+            {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+
+            <button
+              type="submit"
+              className="survey-primary mt-4"
+              disabled={!selectedPlayer || rpe === null || legs === null}
+            >
+              Submit
+            </button>
+          </form>
         )}
       </div>
     </div>

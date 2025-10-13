@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
+import RosterManager from './RosterManager';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -1701,7 +1702,7 @@ export default function SchedulePlanner() {
   };
 
   return (
-    <>
+    <div className="schedule-planner">
       <style>{globalStyles}</style>
       <div ref={schedulePageRef} className="schedule-page">
         <div className="schedule-page__nav">
@@ -1995,6 +1996,7 @@ export default function SchedulePlanner() {
           </div>
         </div>
       </div>
+      <RosterManager />
       {selectedSession && selectedMetrics && (
         <div className="schedule-overlay" onClick={closeDetails}>
           <div className="schedule-drawer details-drawer" onClick={event => event.stopPropagation()}>
@@ -2367,6 +2369,6 @@ export default function SchedulePlanner() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -319,6 +319,7 @@ body {
     flex-direction: column;
   }
 }
+
 .schedule-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 12px; }
 .schedule-matrix { width: 100%; border-collapse: separate; border-spacing: 0; }
 .schedule-matrix th { text-align: left; font-weight: 700; padding: 10px; border-bottom: 1px solid #e5e7eb; }
@@ -1510,4 +1511,213 @@ body {
   border-radius: 5px;
   font-size: 14px;
   z-index: 1000;
+}
+
+.schedule-planner {
+  padding: 2rem;
+  background-color: #f9f9f9;
+  border-radius: 0.5rem;
+}
+
+.roster-manager {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 2rem;
+}
+
+.roster-manager input {
+  font-size: 0.875rem;
+}
+
+.roster-manager button {
+  transition: all 0.15s ease;
+}
+
+.roster-manager .player-row {
+  transition: background-color 0.15s ease;
+}
+
+.roster-manager .player-row:hover {
+  background-color: #f8fafc;
+}
+
+/* Enhanced Roster Manager Styles */
+.roster-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.roster-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.roster-form {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.roster-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 120px auto;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.roster-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.roster-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.roster-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.roster-error {
+  color: #dc2626;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+.roster-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.roster-btn-primary {
+  background-color: #2563eb;
+  color: white;
+}
+
+.roster-btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.roster-btn-secondary {
+  background-color: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.roster-btn-secondary:hover {
+  background-color: #e5e7eb;
+}
+
+.roster-btn-danger {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.roster-btn-danger:hover {
+  background-color: #fecaca;
+}
+
+.roster-table-container {
+  overflow-x: auto;
+}
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.roster-table th,
+.roster-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.roster-table th {
+  background-color: #f8fafc;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.roster-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.roster-empty {
+  text-align: center;
+  color: #6b7280;
+  padding: 2rem !important;
+}
+
+@media (max-width: 640px) {
+  .roster-form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .roster-actions {
+    flex-direction: column;
+  }
+}
+
+/* Attendance section styles */
+.attendance-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.attendance-table th,
+.attendance-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.attendance-table th {
+  font-weight: 500;
+  color: #4b5563;
+  background: #f9fafb;
+}
+
+.attendance-table tr:last-child td {
+  border-bottom: none;
+}
+
+.attendance-reason {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.attendance-reason select,
+.attendance-reason input {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.attendance-reason input {
+  flex: 1;
+  min-width: 0;
 }
