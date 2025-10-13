@@ -17,7 +17,7 @@ const CompactRepTypeSelect = ({ value, onChange, disabled }) => (
 
 const PlanBuilderModal = ({ 
   isOpen, 
-  onClose, 
+  onDelete, // Changed from onClose
   plan, 
   onUpdatePlan, 
   isEditMode, 
@@ -580,15 +580,10 @@ const PlanBuilderModal = ({
                   {isEditMode ? '✏️ Edit Mode' : '👀 View Mode'}
                 </label>
               </div>
-              <button 
-                onClick={() => {
-                  if (plan.length > 0) {
-                    // Save the plan before closing if it contains exercises
-                    onUpdatePlan(plan);
-                  }
-                  onClose();
-                }} 
-                className="icon-button"
+              <button
+                onClick={() => onDelete()}  // Changed from onClose
+                className="p-2 hover:bg-gray-100 rounded text-red-500"
+                title="Delete plan"
               >
                 ×
               </button>

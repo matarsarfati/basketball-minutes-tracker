@@ -20,24 +20,20 @@ const openDB = () => {
 
 export const savePlans = async (plans) => {
   try {
-    const currentSize = new Blob([JSON.stringify(plans)]).size;
-    if (currentSize > 4800000) { // ~4.8MB limit
-      localStorage.clear();
-    }
     localStorage.setItem('workout-plans', JSON.stringify(plans));
+    return true;
   } catch (error) {
-    console.error('Storage quota exceeded - clearing old data');
-    localStorage.clear();
-    localStorage.setItem('workout-plans', JSON.stringify(plans));
+    console.error('Failed to save plans:', error);
+    return false;
   }
 };
 
 export const loadPlans = async () => {
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const store = tx.objectStore(STORE_NAME);
-  const plans = await store.getAll();
-  
-  db.close();
-  return plans;
+  try {
+    const saved = localStorage.getItem('workout-plans');
+    return saved ? JSON.parse(saved) : [];
+  } catch (error) {
+    console.error('Failed to load plans:', error);
+    return [];
+  }
 };

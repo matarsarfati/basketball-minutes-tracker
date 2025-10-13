@@ -8,6 +8,7 @@ import {
 } from '../services/exerciseService';
 import ImageUploadModal from '../components/gym/ImageUploadModal';
 import { loadExercises, saveExercises } from '../services/firestoreService';
+import MuscleGroupEditModal from '../components/gym/MuscleGroupEditModal';
 
 const GymPage = () => {
   // Add validation helper at the top
@@ -71,6 +72,7 @@ const GymPage = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [visibleGroups, setVisibleGroups] = useState([]);
   const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
+  const [editingExercise, setEditingExercise] = useState(null);
 
   // Add safety check helper
   const isValidGroup = useCallback((group) => {
@@ -215,12 +217,14 @@ const GymPage = () => {
     }
   }, [customExercises, isLoading]);
 
-  // Load plans on mount
+  // Modify the plans loading effect to set minimizedPlans
   useEffect(() => {
     loadPlans()
       .then(savedPlans => {
         const plansArray = Array.isArray(savedPlans) ? savedPlans : [];
         setPlans(plansArray);
+        // Add all plan IDs to minimizedPlans by default
+        setMinimizedPlans(plansArray.map(plan => plan.id));
       })
       .catch(err => {
         console.error('Failed to load plans:', err);
@@ -248,6 +252,19 @@ const GymPage = () => {
       }
     }
   }, [muscleGroups, validateMuscleGroup]);
+
+  // Add after other useEffects, before the component functions
+  useEffect(() => {
+    if (!isLoading && plans.length >= 0) {
+      try {
+        savePlans(plans).catch(err => {
+          console.error('Failed to auto-save plans:', err);
+        });
+      } catch (err) {
+        console.error('Failed to auto-save plans:', err);
+      }
+    }
+  }, [plans, isLoading]);
 
   // Add muscle group handler
   const handleAddMuscleGroup = (newGroupName) => {
@@ -284,6 +301,7 @@ const GymPage = () => {
     ));
   };
 
+  // Modify createNewPlan to not add to minimizedPlans
   const createNewPlan = () => {
     const newPlan = {
       id: crypto.randomUUID(),
@@ -303,7 +321,7 @@ const GymPage = () => {
       height: 600
     };
 
-    setPlans(prev => [...prev, newPlan]);
+    setPlans(prev => [...prev, newPlan]); // Only update state
     setOpenPlanIds(prev => [...prev, newPlan.id]);
     setEditModes(prev => ({ ...prev, [newPlan.id]: true }));
     setPlanPositions(prev => ({ ...prev, [newPlan.id]: { ...initialPosition, ...initialSize } }));
@@ -334,18 +352,21 @@ const GymPage = () => {
     setCurrentPlanId(planId);
   };
 
+  // Update closePlan to add back to minimizedPlans
   const closePlan = (planId) => {
     setOpenPlanIds(prev => prev.filter(id => id !== planId));
+    setMinimizedPlans(prev => [...prev, planId]);
     if (currentPlanId === planId) {
       setCurrentPlanId(null);
     }
   };
 
+  // Update minimizePlan to do nothing (since plans are minimized by default)
   const minimizePlan = (planId) => {
-    setMinimizedPlans(prev => [...prev, planId]);
     setOpenPlanIds(prev => prev.filter(id => id !== planId));
   };
 
+  // Update restorePlan to remove from minimizedPlans
   const restorePlan = (planId) => {
     const scrollPosition = window.scrollY;
     const newPosition = {
@@ -356,6 +377,15 @@ const GymPage = () => {
     setMinimizedPlans(prev => prev.filter(id => id !== planId));
     setOpenPlanIds(prev => [...prev, planId]);
     setPlanPositions(prev => ({ ...prev, [planId]: newPosition }));
+  };
+
+  // Update deletePlan to clean up both states
+  const deletePlan = (planId) => {
+    if (window.confirm('Are you sure you want to delete this plan?')) {
+      setPlans(plans.filter(p => p.id !== planId));
+      setMinimizedPlans(prev => prev.filter(id => id !== planId));
+      closePlan(planId);
+    }
   };
 
   const setActiveWorkoutPlan = (planId) => {
@@ -371,33 +401,16 @@ const GymPage = () => {
     ));
   };
 
-  const deletePlan = (planId) => {
-    if (window.confirm('Are you sure you want to delete this plan?')) {
-      setPlans(plans.filter(p => p.id !== planId));
-      closePlan(planId);
-    }
-  };
-
   const updatePlan = async (planId, updatedExercises) => {
-    try {
-      const updatedPlan = {
-        ...plans.find(p => p.id === planId),
-        exercises: updatedExercises,
-        updatedAt: new Date()
-      };
+    const updatedPlan = {
+      ...plans.find(p => p.id === planId),
+      exercises: updatedExercises,
+      updatedAt: new Date()
+    };
 
-      await savePlans([
-        ...plans.filter(p => p.id !== planId),
-        updatedPlan
-      ]);
-
-      setPlans(prev => prev.map(p =>
-        p.id === planId ? updatedPlan : p
-      ));
-    } catch (err) {
-      console.error('Failed to update plan:', err);
-      setError('Failed to update plan');
-    }
+    setPlans(prev => prev.map(p =>
+      p.id === planId ? updatedPlan : p
+    ));
   };
 
   const toggleEditMode = (planId, value) => {
@@ -554,16 +567,6 @@ const GymPage = () => {
     setPlans(prev => 
       prev.map(p => p.id === currentPlanId ? updatedPlan : p)
     );
-
-    try {
-      savePlans([
-        ...plans.filter(p => p.id !== currentPlanId),
-        updatedPlan
-      ]);
-    } catch (err) {
-      console.error('Failed to save plan:', err);
-      setError('Failed to save plan');
-    }
   };
 
   const savePlan = async (planId) => {
@@ -575,25 +578,35 @@ const GymPage = () => {
       updatedAt: new Date()
     };
 
-    try {
-      await savePlans([
-        ...plans.filter(p => p.id !== planId),
-        updatedPlan
-      ]);
+    setPlans(prev => 
+      prev.map(p => p.id === planId ? updatedPlan : p)
+    );
+  };
 
-      setPlans(prev => 
-        prev.map(p => p.id === planId ? updatedPlan : p)
-      );
-    } catch (err) {
-      console.error('Failed to save plan:', err);
-      setError('Failed to save plan');
-    }
+  const handleMuscleGroupChange = (exerciseId, newGroup) => {
+    setCustomExercises(prev => prev.map(ex => 
+      ex.id === exerciseId 
+        ? { ...ex, muscleGroup: newGroup }
+        : ex
+    ));
+    setEditingExercise(null);
   };
 
   const filteredGroups = useMemo(() => {
     return (Array.isArray(muscleGroups) ? muscleGroups : [])
       .filter(isValidGroup);
   }, [muscleGroups, isValidGroup]);
+
+  const handleDeletePlan = (planId) => {
+    if (window.confirm('Delete this plan? This action cannot be undone.')) {
+      setPlans(prev => prev.filter(p => p.id !== planId));
+      setMinimizedPlans(prev => prev.filter(id => id !== planId));
+      setOpenPlanIds(prev => prev.filter(id => id !== planId));
+      if (currentPlanId === planId) {
+        setCurrentPlanId(null);
+      }
+    }
+  };
 
   if (isLoading) {
     return (
@@ -691,15 +704,26 @@ const GymPage = () => {
                       onDrop={(e) => isEditMode && handleDrop(e, group.name)}
                     >
                       {isEditMode && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteExercise(exercise.id);
-                          }}
-                          className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
-                        >
-                          ×
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteExercise(exercise.id);
+                            }}
+                            className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
+                          >
+                            ×
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingExercise(exercise);
+                            }}
+                            className="absolute top-2 left-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 z-10"
+                          >
+                            ⇄
+                          </button>
+                        </>
                       )}
                       <img 
                         src={exercise.imageUrl} 
@@ -780,7 +804,7 @@ const GymPage = () => {
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-100 border-t flex items-center p-2 gap-2">
+      <div className="fixed bottom-0 left-0 right=0 bg-gray-100 border-t flex items-center p-2 gap-2">
         {minimizedPlans.map(planId => {
           const plan = plans.find(p => p.id === planId);
           if (!plan) return null;
@@ -811,7 +835,8 @@ const GymPage = () => {
           <PlanBuilderModal
             key={planId}
             isOpen={true}
-            onClose={() => closePlan(planId)}
+            onDelete={() => handleDeletePlan(planId)}  // Changed from onClose
+            onMinimize={() => minimizePlan(planId)}
             plan={plan.exercises || []}
             onUpdatePlan={(exercises) => updatePlan(planId, exercises)}
             isEditMode={editModes[planId] || false}
@@ -820,7 +845,6 @@ const GymPage = () => {
             initialPosition={planPositions[planId] || { x: window.innerWidth - 520, y: 20 }}
             planName={plan.name}
             onDuplicate={() => duplicatePlan(planId)}
-            onMinimize={() => minimizePlan(planId)}
             onSave={() => savePlan(planId)}
             isActive={activePlanId === planId}
             onActivate={() => setActiveWorkoutPlan(planId)}
@@ -828,6 +852,15 @@ const GymPage = () => {
           />
         );
       })}
+
+      {editingExercise && (
+        <MuscleGroupEditModal
+          exercise={editingExercise}
+          muscleGroups={muscleGroups}
+          onSave={handleMuscleGroupChange}
+          onClose={() => setEditingExercise(null)}
+        />
+      )}
     </div>
   );
 };
