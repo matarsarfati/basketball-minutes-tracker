@@ -4,7 +4,9 @@ import ExerciseLibrarySettings from '../components/gym/ExerciseLibrarySettings';
 import { savePlans, loadPlans } from '../services/planService';
 import { 
   uploadExerciseImage,
-  updateExerciseOrder
+  updateExerciseOrder,
+  fetchMuscleGroups,    // Add this
+  saveMuscleGroups     // Add this
 } from '../services/exerciseService';
 import ImageUploadModal from '../components/gym/ImageUploadModal';
 import { loadExercises, saveExercises } from '../services/firestoreService';
@@ -124,38 +126,6 @@ const GymPage = () => {
     }
   }, [muscleGroups]);
 
-  // Migration function to remove duplicates
-  const migrateExerciseCategories = (exercises, groups) => {
-    const groupNames = groups.map(g => g.name);
-    
-    return exercises.map(ex => {
-      let category = ex.muscleGroup || ex.muscle_group || 'Other';
-      
-      // Fix common typos
-      const fixes = {
-        'Playomtric': 'Plyometric',
-        'Sholders': 'Shoulders',
-        'Uncategorized': 'Other'
-      };
-      
-      if (fixes[category]) {
-        category = fixes[category];
-      }
-      
-      // Add missing categories to groups (avoid duplicates)
-      if (!groupNames.includes(category) && category !== 'Other') {
-        groups.push({ name: category, rows: 2 });
-        groupNames.push(category);
-      }
-      
-      return {
-        ...ex,
-        muscleGroup: category,
-        muscle_group: undefined
-      };
-    });
-  };
-
   // Remove duplicate groups helper
   const removeDuplicateGroups = (groups) => {
     const seen = new Set();
@@ -176,30 +146,63 @@ const GymPage = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load exercises from Firestore only
+        // Load exercises from Firestore
         const exercises = await loadExercises();
         console.log('📦 Loaded exercises:', exercises.length);
         
-        // Load muscle groups from localStorage
-        const savedGroups = localStorage.getItem('muscle_groups');
-        let groups = savedGroups ? JSON.parse(savedGroups) : [...defaultMuscleGroups];
+        let groups = [];
         
-        // Clean and process data
-        groups = removeDuplicateGroups(groups);
-        const fixedExercises = migrateExerciseCategories(exercises, groups);
+        // Try to load muscle groups from Firestore
+        const firestoreGroups = await fetchMuscleGroups();
+        console.log('🔍 Firestore groups:', firestoreGroups);
+        
+        // Check if we got valid data (non-empty array with proper structure)
+        if (Array.isArray(firestoreGroups) && firestoreGroups.length > 0) {
+          // Check if first item has the correct structure
+          if (typeof firestoreGroups[0] === 'object' && firestoreGroups[0].name) {
+            groups = firestoreGroups;
+            console.log('✅ Loaded muscle groups from Firestore');
+          } else if (typeof firestoreGroups[0] === 'string') {
+            // Old format - convert strings to objects
+            groups = firestoreGroups.map(name => ({ name, rows: 2 }));
+            console.log('🔄 Converted old string format to objects');
+            await saveMuscleGroups(groups);
+          }
+        } else {
+          // Firestore is empty, check localStorage
+          const savedGroups = localStorage.getItem('muscle_groups');
+          
+          if (savedGroups) {
+            try {
+              groups = JSON.parse(savedGroups);
+              console.log('📤 Migrating from localStorage to Firestore');
+              await saveMuscleGroups(groups);
+              localStorage.removeItem('muscle_groups');
+            } catch (e) {
+              console.error('Failed to parse localStorage:', e);
+              groups = [...defaultMuscleGroups];
+            }
+          } else {
+            // Nothing anywhere, use defaults
+            console.log('⚡ Using default muscle groups');
+            groups = [...defaultMuscleGroups];
+            await saveMuscleGroups(groups);
+          }
+        }
+
+        // Ensure proper format and remove duplicates
         groups = removeDuplicateGroups(groups);
 
         // Update state
-        setCustomExercises(fixedExercises);
+        setCustomExercises(exercises);
         setMuscleGroups(groups);
         setVisibleGroups(groups.map(g => g.name));
 
-        // Save cleaned groups to localStorage
-        localStorage.setItem('muscle_groups', JSON.stringify(groups));
-        
+        console.log('✅ Final muscle groups:', groups);
+
       } catch (error) {
-        console.error('Failed to load from Firestore:', error);
-        setError('Cannot load exercises - please check internet connection');
+        console.error('Failed to load data:', error);
+        setError('Cannot load data - please check internet connection');
       } finally {
         setIsLoading(false);
       }
@@ -233,11 +236,13 @@ const GymPage = () => {
       });
   }, []);
 
-  // Save muscle groups to localStorage when they change
+  // Save muscle groups to Firestore when they change
   useEffect(() => {
     if (!isLoading && muscleGroups.length > 0) {
       const cleanedGroups = removeDuplicateGroups(muscleGroups);
-      localStorage.setItem('muscle_groups', JSON.stringify(cleanedGroups));
+      saveMuscleGroups(cleanedGroups).catch(err => {
+        console.error('Failed to save muscle groups:', err);
+      });
     }
   }, [muscleGroups, isLoading]);
 
@@ -267,38 +272,59 @@ const GymPage = () => {
   }, [plans, isLoading]);
 
   // Add muscle group handler
-  const handleAddMuscleGroup = (newGroupName) => {
-    setMuscleGroups(prev => {
-      const exists = prev.some(g => 
-        g?.name?.toLowerCase() === newGroupName.toLowerCase()
-      );
-      
-      if (!exists) {
-        const newGroup = { name: newGroupName, rows: 2 };
-        if (validateMuscleGroup(newGroup)) {
-          return [...prev, newGroup];
+  const handleAddMuscleGroup = async (newGroupName) => {
+    try {
+      setMuscleGroups(prev => {
+        const exists = prev.some(g => 
+          g?.name?.toLowerCase() === newGroupName.toLowerCase()
+        );
+        
+        if (!exists) {
+          const newGroup = { name: newGroupName, rows: 2 };
+          if (validateMuscleGroup(newGroup)) {
+            const updatedGroups = [...prev, newGroup];
+            saveMuscleGroups(updatedGroups).catch(console.error);
+            return updatedGroups;
+          }
         }
-      }
-      return prev;
-    });
+        return prev;
+      });
+    } catch (error) {
+      console.error('Failed to add muscle group:', error);
+    }
   };
 
   // Update group rows handler
-  const handleUpdateGroupRows = (groupName, rows) => {
-    setMuscleGroups(prev => 
-      prev.filter(validateMuscleGroup)
-        .map(g => g.name === groupName ? { ...g, rows: Number(rows) } : g)
-    );
+  const handleUpdateGroupRows = async (groupName, rows) => {
+    try {
+      setMuscleGroups(prev => {
+        const updated = prev.filter(validateMuscleGroup)
+          .map(g => g.name === groupName ? { ...g, rows: Number(rows) } : g);
+        saveMuscleGroups(updated).catch(console.error);
+        return updated;
+      });
+    } catch (error) {
+      console.error('Failed to update group rows:', error);
+    }
   };
 
   // Delete muscle group handler
-  const handleDeleteMuscleGroup = (groupNameToDelete) => {
-    setMuscleGroups(prev => prev.filter(group => group.name !== groupNameToDelete));
-    setCustomExercises(prev => prev.map(exercise =>
-      exercise.muscleGroup === groupNameToDelete
-        ? { ...exercise, muscleGroup: 'Other' }
-        : exercise
-    ));
+  const handleDeleteMuscleGroup = async (groupNameToDelete) => {
+    try {
+      setMuscleGroups(prev => {
+        const updated = prev.filter(group => group.name !== groupNameToDelete);
+        saveMuscleGroups(updated).catch(console.error);
+        return updated;
+      });
+      
+      setCustomExercises(prev => prev.map(exercise =>
+        exercise.muscleGroup === groupNameToDelete
+          ? { ...exercise, muscleGroup: 'Other' }
+          : exercise
+      ));
+    } catch (error) {
+      console.error('Failed to delete muscle group:', error);
+    }
   };
 
   // Modify createNewPlan to not add to minimizedPlans
@@ -553,8 +579,8 @@ const GymPage = () => {
     const exerciseCopy = {
       ...exercise,
       id: crypto.randomUUID(),
-      sets: '3',
-      reps: '12',
+      sets: '2',
+      reps: '6',
       repType: 'reps'
     };
   
@@ -835,7 +861,7 @@ const GymPage = () => {
           <PlanBuilderModal
             key={planId}
             isOpen={true}
-            onDelete={() => handleDeletePlan(planId)}  // Changed from onClose
+            onClose={() => handleDeletePlan(planId)}  // Changed from onDelete to onClose
             onMinimize={() => minimizePlan(planId)}
             plan={plan.exercises || []}
             onUpdatePlan={(exercises) => updatePlan(planId, exercises)}

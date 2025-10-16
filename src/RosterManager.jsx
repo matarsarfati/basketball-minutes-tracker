@@ -1,148 +1,112 @@
 import React, { useState, useEffect } from 'react';
+import { rosterService } from './services/rosterService';
 
-const ROSTER_KEY = "teamRosterV1";
-const ATTENDANCE_KEY = "practiceAttendanceV1";
-const SURVEY_KEY = "practiceSurveysV1";
+const ROSTER_KEY = 'teamRoster';
+
+const POSITIONS = ['Guard', 'Forward', 'Center'];
 
 export default function RosterManager() {
-  const [players, setPlayers] = useState(() => {
-    try {
-      const stored = localStorage.getItem(ROSTER_KEY);
-      if (!stored) return [];
-      const parsed = JSON.parse(stored);
-      return Array.isArray(parsed) 
-        ? parsed.map(p => typeof p === 'string' 
-            ? { id: crypto.randomUUID(), name: p, number: '', dateAdded: new Date().toISOString() }
-            : p)
-        : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [newPlayer, setNewPlayer] = useState({ name: '', number: '' });
+  const [isLoading, setIsLoading] = useState(true);
+  const [players, setPlayers] = useState([]);
+  const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const [newPlayer, setNewPlayer] = useState({
+    name: '',
+    number: '',
+    position: POSITIONS[0],
+    active: true
+  });
 
+  // Load players from Firebase on mount
   useEffect(() => {
-    try {
-      localStorage.setItem(ROSTER_KEY, JSON.stringify(players));
-    } catch (err) {
-      console.error('Failed to save roster:', err);
-    }
+    const loadPlayers = async () => {
+      try {
+        const firebasePlayers = await rosterService.getPlayers();
+        setPlayers(firebasePlayers);
+      } catch (error) {
+        console.error('Failed to load from Firebase:', error);
+        // Fall back to localStorage
+        const stored = localStorage.getItem(ROSTER_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setPlayers(Array.isArray(parsed) ? parsed : []);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadPlayers();
+  }, []);
+
+  // Sync to localStorage as backup
+  useEffect(() => {
+    if (!players.length) return;
+    localStorage.setItem(ROSTER_KEY, JSON.stringify(players));
   }, [players]);
 
-  const handleAddPlayer = (e) => {
+  const handleAddPlayer = async (e) => {
     e.preventDefault();
-    const name = newPlayer.name.trim();
-    const number = newPlayer.number.trim();
+    if (!newPlayer.name || !newPlayer.number) return;
 
-    if (!name) {
-      setError('Please enter a player name');
-      return;
-    }
-
-    if (players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-      setError('A player with this name already exists');
-      return;
-    }
-
-    setPlayers(prev => [...prev, {
-      id: crypto.randomUUID(),
-      name,
-      number,
-      dateAdded: new Date().toISOString()
-    }]);
-    setNewPlayer({ name: '', number: '' });
-    setError('');
-    setShowForm(false);
-  };
-
-  const cleanupPlayerData = (playerId) => {
-    // Clean up attendance records
     try {
-      const storedAttendance = localStorage.getItem(ATTENDANCE_KEY);
-      if (storedAttendance) {
-        const attendance = JSON.parse(storedAttendance);
-        const cleanedAttendance = Object.fromEntries(
-          Object.entries(attendance).map(([sessionId, records]) => [
-            sessionId,
-            records.filter(record => record.playerId !== playerId)
-          ])
-        );
-        localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(cleanedAttendance));
-      }
-    } catch (err) {
-      console.error('Failed to clean attendance:', err);
-    }
-
-    // Clean up survey responses
-    try {
-      const storedSurveys = localStorage.getItem(SURVEY_KEY);
-      if (storedSurveys) {
-        const surveys = JSON.parse(storedSurveys);
-        const cleanedSurveys = Object.fromEntries(
-          Object.entries(surveys).map(([sessionId, responses]) => [
-            sessionId,
-            responses.filter(response => response.playerId !== playerId)
-          ])
-        );
-        localStorage.setItem(SURVEY_KEY, JSON.stringify(cleanedSurveys));
-      }
-    } catch (err) {
-      console.error('Failed to clean surveys:', err);
+      const firebaseId = await rosterService.addPlayer(newPlayer);
+      setPlayers(prev => [...prev, { ...newPlayer, firebaseId }]);
+      setNewPlayer({
+        name: '',
+        number: '',
+        position: POSITIONS[0],
+        active: true
+      });
+    } catch (error) {
+      console.error('Failed to add player to Firebase:', error);
+      alert('Failed to save player. Please try again.');
     }
   };
 
-  const handleRemovePlayer = (playerId) => {
-    const player = players.find(p => p.id === playerId);
-    if (!player) return;
+  const handleUpdatePlayer = async (playerId, updates) => {
+    try {
+      const player = players.find(p => p.id === playerId);
+      if (!player?.firebaseId) throw new Error('No Firebase ID found');
 
-    const confirmMessage = 
-      `Are you sure you want to remove ${player.name} (#${player.number})?\n\n` +
-      'This will permanently delete:\n' +
-      '- Player from roster\n' +
-      '- All attendance records\n' +
-      '- All survey responses';
+      await rosterService.updatePlayer(player.firebaseId, updates);
+      setPlayers(prev => 
+        prev.map(p => p.id === playerId ? { ...p, ...updates } : p)
+      );
+    } catch (error) {
+      console.error('Failed to update player in Firebase:', error);
+      alert('Failed to update player. Please try again.');
+    }
+  };
 
-    if (!window.confirm(confirmMessage)) return;
+  const handleRemovePlayer = async (playerId) => {
+    try {
+      const player = players.find(p => p.id === playerId);
+      if (!player?.firebaseId) throw new Error('No Firebase ID found');
 
-    cleanupPlayerData(playerId);
-    setPlayers(prev => prev.filter(p => p.id !== playerId));
+      await rosterService.deletePlayer(player.firebaseId);
+      setPlayers(prev => prev.filter(p => p.id !== playerId));
+    } catch (error) {
+      console.error('Failed to delete player from Firebase:', error);
+      alert('Failed to delete player. Please try again.');
+    }
   };
 
   const handleEditPlayer = (player) => {
+    setNewPlayer({
+      name: player.name,
+      number: player.number,
+      position: player.position || POSITIONS[0],
+      active: player.active !== false
+    });
     setEditingId(player.id);
-    setNewPlayer({ name: player.name, number: player.number });
     setShowForm(true);
-  };
-
-  const handleUpdatePlayer = (e) => {
-    e.preventDefault();
-    const name = newPlayer.name.trim();
-    const number = newPlayer.number.trim();
-
-    if (!name) {
-      setError('Please enter a player name');
-      return;
-    }
-
-    if (players.some(p => p.name.toLowerCase() === name.toLowerCase() && p.id !== editingId)) {
-      setError('A player with this name already exists');
-      return;
-    }
-
-    setPlayers(prev => prev.map(p => 
-      p.id === editingId 
-        ? { ...p, name, number }
-        : p
-    ));
-    setNewPlayer({ name: '', number: '' });
-    setEditingId(null);
     setError('');
-    setShowForm(false);
   };
+
+  if (isLoading) {
+    return <div>Loading roster...</div>;
+  }
 
   return (
     <div className="roster-manager">

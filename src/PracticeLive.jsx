@@ -11,6 +11,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import './styles.css';
+import { rosterService } from './services/rosterService';
 
 const safeParse = (key, defaultValue) => {
   if (typeof window === "undefined") return defaultValue;
@@ -94,11 +95,6 @@ const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
 const loadSessions = () => {
   const parsed = safeParse(STORAGE_KEY_V2, []);
-  return Array.isArray(parsed) ? parsed : [];
-};
-
-const loadRoster = () => {
-  const parsed = safeParse(ROSTER_KEY, []);
   return Array.isArray(parsed) ? parsed : [];
 };
   
@@ -557,7 +553,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const session = sessionIndex >= 0 ? sessionsData[sessionIndex] : null;
 
   // 3. Initialize roster and other basic state
-  const [roster, setRoster] = useState(() => loadRoster());
+  const [roster, setRoster] = useState([]);
+  const [isLoadingRoster, setIsLoadingRoster] = useState(true);
   const [muted, setMuted] = useState(false);
   const [newPartForm, setNewPartForm] = useState({
     title: "",
@@ -650,6 +647,24 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   });
   const [summaryEdits, setSummaryEdits] = useState({});
   const [timers, setTimers] = useState([]);
+
+  useEffect(() => {
+    const fetchRoster = async () => {
+      setIsLoadingRoster(true);
+      try {
+        const players = await rosterService.getPlayers();
+        setRoster(players);
+      } catch (error) {
+        console.error('Failed to load roster:', error);
+        // Fall back to localStorage
+        const localRoster = safeParse(ROSTER_KEY, []);
+        setRoster(Array.isArray(localRoster) ? localRoster : []);
+      } finally {
+        setIsLoadingRoster(false);
+      }
+    };
+    fetchRoster();
+  }, []);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -938,6 +953,10 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       </div>
     );
   };
+
+  if (isLoadingRoster) {
+    return <div>Loading roster...</div>;
+  }
 
   if (!session) {
     return (

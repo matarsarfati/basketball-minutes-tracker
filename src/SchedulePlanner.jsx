@@ -5,6 +5,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 import RosterManager from './RosterManager';
+import { scheduleService } from './services/scheduleService';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -337,7 +338,13 @@ const sanitizeAutoValue = (rawValue, meta) => {
 };
 
 const setupAutoAdvance = (root, configRef) => {
-  if (!root) return () => {};
+  console.log('setupAutoAdvance called with root:', root?.tagName);
+
+  if (!root) {
+    console.warn('No root element provided to setupAutoAdvance');
+    return () => {};
+  }
+
   const InputEvt = typeof InputEvent === "undefined" ? null : InputEvent;
 
   const focusField = fieldId => {
@@ -361,12 +368,23 @@ const setupAutoAdvance = (root, configRef) => {
   const handleInput = event => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
+
+    console.log('handleInput triggered:', {
+      id: target.id,
+      value: target.value
+    });
+
     const fieldId = target.dataset.autoField;
-    if (!fieldId) return;
+    console.log('fieldId from dataset:', fieldId);
+
     const currentConfig = configRef.current;
-    if (!currentConfig) return;
+    if (!currentConfig) {
+      console.warn('No current config found');
+      return;
+    }
+
     const fieldMeta = currentConfig.fields[fieldId];
-    if (!fieldMeta) return;
+    console.log('fieldMeta found:', fieldMeta);
 
     const inputEvent = InputEvt && event instanceof InputEvt ? event : null;
     if (inputEvent?.data === ":" && fieldMeta.type === "hour") {
@@ -439,6 +457,7 @@ const setupAutoAdvance = (root, configRef) => {
     }
   };
 
+  console.log('Adding event listeners to:', root.tagName);
   root.addEventListener("input", handleInput);
   root.addEventListener("paste", handlePaste);
 
@@ -575,29 +594,28 @@ const legacyToSession = (legacy, index = 0) => {
   };
 };
 
-const loadV2WithMigration = () => {
+const loadLocalStorage = () => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_V2);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) return parsed;
     }
-  } catch {
-    // ignore
-  }
-  try {
+    // Try legacy storage
     const legacyStored = localStorage.getItem(STORAGE_KEY_V1);
     if (!legacyStored) return [];
     const legacy = JSON.parse(legacyStored);
     if (!Array.isArray(legacy)) return [];
     return legacy.map(legacyToSession);
-  } catch {
+  } catch (error) {
+    console.error('Error loading from localStorage:', error);
     return [];
   }
 };
 
 export default function SchedulePlanner() {
-  const [sessions, setSessions] = useState(loadV2WithMigration);
+  const [sessions, setSessions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false); // Add this line
   const currentMonth = useMemo(() => getCurrentMonthRange(), []);
   const [fromDate, setFromDate] = useState(currentMonth.startISO);
@@ -624,6 +642,33 @@ export default function SchedulePlanner() {
   const schedulePageRef = useRef(null);
   const startTimeInputRef = useRef(null);
   const editorSessionIdRef = useRef(null);
+
+  // Add a ref for the "Add Session" form container
+  const addFormRef = useRef(null);
+
+  // Load sessions from Firebase on mount
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const firebaseSessions = await scheduleService.getScheduleEvents();
+        setSessions(firebaseSessions);
+      } catch (error) {
+        console.error('Failed to load from Firebase:', error);
+        // Fall back to localStorage
+        const localSessions = loadLocalStorage();
+        setSessions(localSessions);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadSessions();
+  }, []);
+
+  // Sync to localStorage as backup
+  useEffect(() => {
+    if (!sessions.length) return;
+    localStorage.setItem(STORAGE_KEY_V2, JSON.stringify(sessions));
+  }, [sessions]);
 
   const updateFromPart = useCallback(
     (part, value) => {
@@ -677,34 +722,27 @@ export default function SchedulePlanner() {
     [setNewSessionForm]
   );
 
-  const mutateSession = (sessionId, mutator) => {
-    setSessions(prev =>
-      prev.map(existing => {
-        if (existing.id !== sessionId) return existing;
-        const updated = mutator(existing);
-        const partsChanged = existing.parts !== updated.parts;
-        if (!partsChanged) return updated;
+  const mutateSession = async (sessionId, mutator) => {
+    setSessions(prev => {
+      const session = prev.find(s => s.id === sessionId);
+      if (!session) return prev;
 
-        const prevTotals = calcTotalsFromParts(existing.parts || []);
-        const nextTotals = calcTotalsFromParts(updated.parts || []);
-        const shouldUpdateTotal =
-          existing.totalMinutes === undefined ||
-          existing.totalMinutes === null ||
-          existing.totalMinutes === "" ||
-          existing.totalMinutes === prevTotals.totalMinutes;
-        const shouldUpdateHigh =
-          existing.highIntensityMinutes === undefined ||
-          existing.highIntensityMinutes === null ||
-          existing.highIntensityMinutes === "" ||
-          existing.highIntensityMinutes === prevTotals.highIntensityMinutes;
+      const updated = mutator(session);
+      const updatedSessions = prev.map(existing => 
+        existing.id !== sessionId ? existing : updated
+      );
 
-        return {
-          ...updated,
-          totalMinutes: shouldUpdateTotal ? nextTotals.totalMinutes : updated.totalMinutes,
-          highIntensityMinutes: shouldUpdateHigh ? nextTotals.highIntensityMinutes : updated.highIntensityMinutes,
-        };
-      })
-    );
+      // Sync to Firebase
+      if (session.firebaseId) {
+        scheduleService.updateScheduleEvent(session.firebaseId, updated)
+          .catch(error => {
+            console.error('Failed to update session in Firebase:', error);
+            // Consider rolling back the change here
+          });
+      }
+
+      return updatedSessions;
+    });
   };
 
   const addPart = sessionId => {
@@ -722,10 +760,6 @@ export default function SchedulePlanner() {
       ],
     }));
   };
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_V2, JSON.stringify(sessions));
-  }, [sessions]);
 
   const monthDays = useMemo(() => getMonthDays(viewMonth), [viewMonth]);
 
@@ -913,7 +947,7 @@ export default function SchedulePlanner() {
     }
   };
 
-  const addSession = () => {
+  const addSession = async () => {
     const { date, slot, startTime, type } = newSessionForm;
     if (!date || !slot || !type) {
       alert("Please provide date, slot, and type.");
@@ -930,27 +964,46 @@ export default function SchedulePlanner() {
       alert(`A ${slotValue} session already exists for ${date}.`);
       return;
     }
+
     const newSession = {
       ...emptySession(date, slotValue),
       startTime: normalizedStart,
       type,
     };
-    setSessions(prev => [...prev, newSession]);
-    setNewSessionForm({ date: "", slot: "AM", startTime: "", type: "Practice" });
-    setNewDateParts(splitISOToParts(""));
-    setNewTimeParts(splitTimeToParts(""));
-    setSelectedSessionId(newSession.id);
-    setTrainingExpanded(true);
+
+    try {
+      const firebaseId = await scheduleService.addScheduleEvent(newSession);
+      setSessions(prev => [...prev, { ...newSession, firebaseId }]);
+      setNewSessionForm({ date: "", slot: "AM", startTime: "", type: "Practice" });
+      setNewDateParts(splitISOToParts(""));
+      setNewTimeParts(splitTimeToParts(""));
+      setSelectedSessionId(newSession.id);
+      setTrainingExpanded(true);
+    } catch (error) {
+      console.error('Failed to add session to Firebase:', error);
+      alert('Failed to save session. Please try again.');
+    }
   };
 
-  const deleteSession = id => {
+  const deleteSession = async (id) => {
     const target = sessions.find(session => session.id === id);
-    const label = target ? `${target.date} ${target.slot}` : "this session";
+    if (!target) return;
+    
+    const label = `${target.date} ${target.slot}`;
     if (!window.confirm(`Delete session ${label}?`)) return;
-    setSessions(prev => prev.filter(session => session.id !== id));
-    setSelectedSessionId(prev => (prev === id ? null : prev));
-    if (editorSessionId === id) {
-      closeEditor();
+
+    try {
+      if (target.firebaseId) {
+        await scheduleService.deleteScheduleEvent(target.firebaseId);
+      }
+      setSessions(prev => prev.filter(session => session.id !== id));
+      setSelectedSessionId(prev => (prev === id ? null : prev));
+      if (editorSessionId === id) {
+        closeEditor();
+      }
+    } catch (error) {
+      console.error('Failed to delete session from Firebase:', error);
+      alert('Failed to delete session. Please try again.');
     }
   };
 
@@ -1089,7 +1142,7 @@ export default function SchedulePlanner() {
         maxLength: 4,
         group: "add-date",
         order: 2,
-        nextFieldId: null,
+        nextFieldId: "add-time-hour", // Link date to time inputs
         value: newDateParts.year,
         setter: value => updateNewDatePart("year", value),
       },
@@ -1148,7 +1201,11 @@ export default function SchedulePlanner() {
       groups[groupId].sort((a, b) => fields[a].order - fields[b].order);
     });
 
+    console.log('Auto-advance fields configured:', Object.keys(fields));
+    console.log('add-time-hour config:', fields['add-time-hour']);
+
     autoAdvanceConfigRef.current = { fields, groups };
+    console.log('autoAdvanceConfigRef updated:', autoAdvanceConfigRef.current);
   }, [
     fromParts,
     toParts,
@@ -1162,9 +1219,62 @@ export default function SchedulePlanner() {
     updateEditorTimePart,
   ]);
 
+  // Modify the useEffect for setupAutoAdvance to handle dynamic rendering of fields
   useEffect(() => {
-    if (!schedulePageRef.current) return undefined;
-    return setupAutoAdvance(schedulePageRef.current, autoAdvanceConfigRef);
+    let cleanup = () => {};
+
+    const setupForm = () => {
+      if (addFormRef.current) {
+        cleanup = setupAutoAdvance(addFormRef.current, autoAdvanceConfigRef);
+      }
+    };
+
+    // Initial setup
+    setupForm();
+
+    // Observe changes in the form to reattach listeners if necessary
+    const observer = new MutationObserver(setupForm);
+    if (addFormRef.current) {
+      observer.observe(addFormRef.current, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    return () => {
+      cleanup();
+      observer.disconnect();
+    };
+  }, []);
+
+  const verifyTimeInputSetup = () => {
+    const input = document.getElementById('add-time-hour');
+    if (!input) {
+      console.warn('Time input not found in DOM');
+      return;
+    }
+
+    console.log('Time input attributes:', {
+      id: input.id,
+      'data-auto-field': input.dataset.autoField,
+      'data-advance-type': input.dataset.advanceType,
+      'data-advance-group': input.dataset.advanceGroup,
+      'data-advance-order': input.dataset.advanceOrder,
+      'data-advance-next': input.dataset.advanceNext,
+    });
+
+    const parent = schedulePageRef.current;
+    if (parent) {
+      console.log('Parent element:', {
+        tagName: parent.tagName,
+        id: parent.id,
+        className: parent.className
+      });
+    }
+  };
+
+  useEffect(() => {
+    setTimeout(verifyTimeInputSetup, 1000);
   }, []);
 
   const updatePart = (sessionId, partId, field, value) => {
@@ -1701,6 +1811,10 @@ export default function SchedulePlanner() {
     }
   };
 
+  if (isLoading) {
+    return <div>Loading schedule...</div>;
+  }
+
   return (
     <div className="schedule-planner">
       <style>{globalStyles}</style>
@@ -1844,7 +1958,7 @@ export default function SchedulePlanner() {
 
         {appliedRangeText && <div className="filters-note">{appliedRangeText}</div>}
 
-        <div id="schedule-add-form" className="addSessionCard">
+        <div id="schedule-add-form" className="addSessionCard" ref={addFormRef}>
           <h3 className="addSessionCard__title">Add Session</h3>
           <div className="addSessionCard__grid">
             <div className="addSessionCard__field">
@@ -1913,35 +2027,33 @@ export default function SchedulePlanner() {
                   ref={startTimeInputRef}
                   className="schedule-input schedule-input--segment"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   placeholder="HH"
                   maxLength={2}
                   value={newTimeParts.hour}
-                  onChange={noop}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
+                    updateNewTimePart('hour', digits);
+                    if (digits.length === 2) {
+                      document.getElementById('add-time-minute')?.focus();
+                    }
+                  }}
                   autoComplete="off"
-                  data-auto-field="add-time-hour"
-                data-advance-type="hour"
-                data-advance-group="add-time"
-                data-advance-order="0"
-                data-advance-next="add-time-minute"
-                aria-label="Session hour"
-              />
+                  aria-label="Session hour"
+                />
                 <input
                   id="add-time-minute"
                   className="schedule-input schedule-input--segment"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   placeholder="MM"
                   maxLength={2}
                   value={newTimeParts.minute}
-                  onChange={noop}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, '').slice(0, 2);
+                    updateNewTimePart('minute', digits);
+                  }}
                   autoComplete="off"
-                  data-auto-field="add-time-minute"
-                data-advance-type="minute"
-                data-advance-group="add-time"
-                data-advance-order="1"
-                aria-label="Session minutes"
-              />
+                  aria-label="Session minutes"
+                />
               </div>
             </div>
             <div className="addSessionCard__field">

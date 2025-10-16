@@ -587,7 +587,9 @@ const PlanBuilderModal = ({
                     // Save the plan before closing if it contains exercises
                     onUpdatePlan(plan);
                   }
-                  onClose();
+                  if (typeof onClose === 'function') {
+                    onClose();
+                  }
                 }} 
                 className="icon-button"
               >
@@ -632,7 +634,19 @@ const PlanBuilderModal = ({
                               alt={exercise.name}
                               className="object-contain mb-1"
                             />
-                            <button className="icon-button text-sm">×</button>
+                            {isEditMode && (
+                              <button 
+                                className="icon-button text-sm hover:bg-red-100 hover:text-red-600"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const newPlan = [...plan];
+                                  newPlan.splice(currentIndex, 1);
+                                  onUpdatePlan(newPlan);
+                                }}
+                              >
+                                ×
+                              </button>
+                            )}
                           </div>
 
                           <div className="font-medium mb-2 text-sm">

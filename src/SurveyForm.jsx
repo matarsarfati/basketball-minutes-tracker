@@ -159,29 +159,17 @@ export default function SurveyForm() {
     }
   }, [sessionId]);
 
-  // Add completion check
+  // Update checkCompletion to just return status without navigation
   const checkCompletion = useCallback(() => {
-    if (!presentPlayers.length) return;
+    if (!presentPlayers.length) return false;
 
     const responses = store[sessionId] || {};
     const allResponded = presentPlayers.every(
       player => responses[player.name]
     );
 
-    if (allResponded) {
-      // Return to practice page after short delay
-      setTimeout(() => {
-        navigate(`/practice/${sessionId}`);
-      }, 1500);
-    }
-  }, [presentPlayers, store, sessionId, navigate]);
-
-  // Check completion after each submission
-  useEffect(() => {
-    if (showSuccess) {
-      checkCompletion();
-    }
-  }, [showSuccess, checkCompletion]);
+    return allResponded;
+  }, [presentPlayers, store, sessionId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -321,60 +309,141 @@ export default function SurveyForm() {
   };
 
   return (
-    <div className="survey-wrap">
-      <div className="survey-card">
-        <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
-
-        {showSuccess ? (
-          <div className="success-wrap">
-            <div className="success-title">Thanks!</div>
-            <p>Hand the phone to the next player.</p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Select Player</label>
-              <select
-                value={selectedPlayer}
-                onChange={handlePlayerChange}
-                className="w-full p-2 border rounded"
-                required
-              >
-                <option value="">Choose player...</option>
-                {presentPlayers.map((player) => (
-                  <option key={player.id} value={player.name}>
-                    {player.name} {player.number ? `#${player.number}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {renderControl("rpe", rpe, setRpe)}
-
-            {renderControl("legs", legs, setLegs)}
-
-            <div>
-              <label className="block text-sm font-medium mb-2">Notes (optional)</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={3}
-                placeholder="Share anything about the session you'd like the staff to know."
-                className="w-full p-2 border rounded"
-              />
-            </div>
-
-            {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
-
+    <div className="survey-form">
+      <div className="survey-wrap">
+        <div className="survey-card">
+          {/* Add Back Button */}
+          <div className="mb-4">
             <button
-              type="submit"
-              className="survey-primary mt-4"
-              disabled={!selectedPlayer || rpe === null || legs === null}
+              onClick={() => navigate(`/practice/${sessionId}`)}
+              className="text-blue-600 hover:text-blue-800 flex items-center gap-2"
             >
-              Submit
+              <span>←</span>
+              <span>Back to Live Practice</span>
             </button>
-          </form>
-        )}
+          </div>
+
+          <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
+
+          {/* Enhanced Status Section */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="text-center mb-3">
+              <span className="text-2xl font-bold text-blue-600">
+                {Object.keys(store[sessionId] || {}).length}
+              </span>
+              <span className="text-gray-600"> of </span>
+              <span className="text-2xl font-bold text-blue-600">
+                {presentPlayers.length}
+              </span>
+              <span className="text-gray-600"> players completed</span>
+            </div>
+
+            {(() => {
+              const completedNames = new Set(Object.keys(store[sessionId] || {}));
+              const pendingPlayers = presentPlayers.filter(
+                player => !completedNames.has(player.name)
+              );
+
+              if (pendingPlayers.length > 0) {
+                return (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Still waiting for:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {pendingPlayers.map(player => (
+                        <span
+                          key={player.id}
+                          className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
+                        >
+                          {player.name} {player.number ? `#${player.number}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <p className="text-sm font-medium text-green-600 text-center">
+                      ✅ All players have completed the survey!
+                    </p>
+                  </div>
+                );
+              }
+            })()}
+          </div>
+
+          {showSuccess ? (
+            <div className="success-wrap">
+              <div className="success-title">✅ Response Saved!</div>
+              <p className="mb-4">Hand the phone to the next player.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccess(false);
+                  setSelectedPlayer('');
+                  setRpe(null);
+                  setLegs(null);
+                  setNotes('');
+                  setError('');
+                }}
+                className="survey-primary w-full"
+              >
+                Next Player →
+              </button>
+            </div>
+          ) : (
+            <div className="survey-wrap">
+              <div className="survey-card">
+                <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
+                <form onSubmit={handleSubmit}>
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium mb-2">Select Player</label>
+                    <select
+                      value={selectedPlayer}
+                      onChange={handlePlayerChange}
+                      className="w-full p-2 border rounded"
+                      required
+                    >
+                      <option value="">Choose player...</option>
+                      {presentPlayers.map((player) => (
+                        <option key={player.id} value={player.name}>
+                          {player.name} {player.number ? `#${player.number}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {renderControl("rpe", rpe, setRpe)}
+
+                  {renderControl("legs", legs, setLegs)}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Notes (optional)</label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={3}
+                      placeholder="Share anything about the session you'd like the staff to know."
+                      className="w-full p-2 border rounded"
+                    />
+                  </div>
+
+                  {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+
+                  <button
+                    type="submit"
+                    className="survey-primary mt-4"
+                    disabled={!selectedPlayer || rpe === null || legs === null}
+                  >
+                    Submit
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
