@@ -12,6 +12,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import './styles.css';
 import { rosterService } from './services/rosterService';
+import { practiceDataService } from './services/practiceDataService';
 
 const safeParse = (key, defaultValue) => {
   if (typeof window === "undefined") return defaultValue;
@@ -714,6 +715,77 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }
   }, [session?.id, metrics, drillRows, attendance, surveyCompleted]);
 
+  // Load practice data from Firebase
+  useEffect(() => {
+    const loadPracticeData = async () => {
+      if (!session?.id) return;
+      try {
+        const practiceData = await practiceDataService.getPracticeData(session.id);
+        if (practiceData) {
+          setMetrics(practiceData.metrics || {
+            planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
+            actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
+          });
+          setDrillRows(practiceData.drillRows || []);
+          setAttendance(practiceData.attendance || {});
+          setSurveyData(practiceData.surveyData || null);
+          setSurveyAverages(practiceData.surveyAverages || { rpe: 0, legs: 0 });
+        }
+      } catch (error) {
+        console.error('Failed to load practice data:', error);
+        // Fallback to localStorage if Firebase fails
+        const stored = localStorage.getItem(`${PRACTICE_DATA_KEY}${session.id}`);
+        if (stored) {
+          const data = JSON.parse(stored);
+          setMetrics(data.metrics || {
+            planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
+            actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
+          });
+          setDrillRows(data.drillRows || []);
+          setAttendance(data.attendance || {});
+          setSurveyData(data.surveyData || null);
+          setSurveyAverages(data.surveyAverages || { rpe: 0, legs: 0 });
+        }
+      }
+    };
+    loadPracticeData();
+  }, [session?.id]);
+
+  // Save to Firebase with debouncing
+  useEffect(() => {
+    if (!session?.id) return;
+    
+    const savePracticeData = async () => {
+      try {
+        await practiceDataService.savePracticeData(session.id, {
+          metrics,
+          drillRows,
+          attendance,
+          surveyData,
+          surveyAverages,
+          surveyCompleted: Boolean(surveyData && Object.keys(surveyData).length > 0)
+        });
+      } catch (error) {
+        console.error('Failed to save practice data:', error);
+        // Fallback to localStorage if Firebase fails
+        try {
+          localStorage.setItem(`${PRACTICE_DATA_KEY}${session.id}`, JSON.stringify({
+            metrics,
+            drillRows,
+            attendance,
+            surveyData,
+            surveyAverages
+          }));
+        } catch (localError) {
+          console.error('Failed to save to localStorage:', localError);
+        }
+      }
+    };
+    
+    const timer = setTimeout(savePracticeData, 1000);
+    return () => clearTimeout(timer);
+  }, [session?.id, metrics, drillRows, attendance, surveyData, surveyAverages]);
+
   const updateMetrics = (type, field, value) => {
     setMetrics(prev => ({
       ...prev,
@@ -973,12 +1045,21 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-[1400px] mx-auto">
-        <header className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Practice Session</h1>
-          <div className="text-gray-600">
-            <p>Date: {session.date}</p>
-            <p>Time: {session.time}</p>
+        <header className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold mb-2">Practice Session</h1>
+            <div className="text-gray-600">
+              <p>Date: {session.date}</p>
+              <p>Time: {session.time}</p>
+            </div>
           </div>
+          <Link 
+            to="/schedule" 
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <span>←</span>
+            <span>Back to Schedule</span>
+          </Link>
         </header>
 
         <div className="practice-layout">

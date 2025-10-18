@@ -21,13 +21,13 @@ export const scheduleService = {
     try {
       const querySnapshot = await getDocs(collection(db, SCHEDULE_COLLECTION));
       const events = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        firebaseId: doc.id  // Ensure this is included
       }));
-      console.log('Fetched events:', events);
+      console.log('Loaded events with IDs:', events.map(e => ({ id: e.id, firebaseId: e.firebaseId })));
       return events;
     } catch (error) {
-      console.error('Error fetching schedule events:', error);
+      console.error('Error loading schedule events:', error);
       throw error;
     }
   },

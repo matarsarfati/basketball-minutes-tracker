@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
+import { practiceDataService } from './services/practiceDataService';
 import "./SurveyForm.css";
 
 const STORE_KEY = "practiceSurveysV1";
@@ -159,6 +160,33 @@ export default function SurveyForm() {
     }
   }, [sessionId]);
 
+  // Load survey data from Firebase on mount
+  useEffect(() => {
+    const loadSurveyData = async () => {
+      try {
+        const surveyData = await practiceDataService.getSurveyData(sessionId);
+        if (surveyData) {
+          setStore(prev => ({ ...prev, [sessionId]: surveyData }));
+        }
+      } catch (error) {
+        console.error('Failed to load survey data:', error);
+        // Fallback to localStorage
+        try {
+          const raw = localStorage.getItem(STORE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            setStore(parsed ?? {});
+          }
+        } catch (err) {
+          console.error('Failed to load from localStorage:', err);
+        }
+      }
+    };
+    if (sessionId) {
+      loadSurveyData();
+    }
+  }, [sessionId]);
+
   // Update checkCompletion to just return status without navigation
   const checkCompletion = useCallback(() => {
     if (!presentPlayers.length) return false;
@@ -171,12 +199,21 @@ export default function SurveyForm() {
     return allResponded;
   }, [presentPlayers, store, sessionId]);
 
-  const handleSubmit = (e) => {
+  // Update handleSubmit to use Firebase
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!selectedPlayer || rpe === null || legs === null) return;
 
     try {
-      // Save survey response
+      // Save to Firebase
+      await practiceDataService.updateSurveyResponse(sessionId, selectedPlayer, {
+        rpe,
+        legs,
+        notes: notes.trim(),
+        savedAt: new Date().toISOString()
+      });
+
+      // Also save to localStorage as backup
       const surveys = { ...store };
       surveys[sessionId] = {
         ...surveys[sessionId],
@@ -187,7 +224,6 @@ export default function SurveyForm() {
           savedAt: new Date().toISOString()
         }
       };
-
       localStorage.setItem(STORE_KEY, JSON.stringify(surveys));
       setStore(surveys);
 

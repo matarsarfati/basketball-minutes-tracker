@@ -6,6 +6,7 @@ import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 import RosterManager from './RosterManager';
 import { scheduleService } from './services/scheduleService';
+import { practiceDataService } from './services/practiceDataService';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -178,6 +179,32 @@ const globalStyles = `
     margin-top: auto;
     overflow: hidden;
     opacity: 0.9;
+  }
+
+  .details-stat__input {
+    font-size: 24px;
+    font-weight: bold;
+    text-align: center;
+    width: 80px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 4px;
+    background: transparent;
+  }
+
+  .details-stat__input:hover {
+    border-bottom-color: #cbd5e1;
+  }
+
+  .details-stat__input:focus {
+    outline: none;
+    border-bottom-color: #3b82f6;
+  }
+
+  .details-stat__unit {
+    font-size: 14px;
+    color: #6b7280;
+    margin-left: 4px;
   }
 `;
 
@@ -651,6 +678,11 @@ export default function SchedulePlanner() {
     const loadSessions = async () => {
       try {
         const firebaseSessions = await scheduleService.getScheduleEvents();
+        console.log('Loaded sessions:', firebaseSessions.map(s => ({ 
+          id: s.id, 
+          firebaseId: s.firebaseId,
+          date: s.date 
+        })));
         setSessions(firebaseSessions);
       } catch (error) {
         console.error('Failed to load from Firebase:', error);
@@ -989,20 +1021,46 @@ export default function SchedulePlanner() {
     const target = sessions.find(session => session.id === id);
     if (!target) return;
     
+    console.log('Deleting session:', { 
+      id: target.id, 
+      firebaseId: target.firebaseId,
+      date: target.date 
+    });
+    
     const label = `${target.date} ${target.slot}`;
-    if (!window.confirm(`Delete session ${label}?`)) return;
-
+    if (!window.confirm(`Delete session ${label}? This will also delete all practice data (attendance, metrics, drills, surveys).`)) return;
+  
     try {
+      // Delete schedule event
       if (target.firebaseId) {
+        console.log('Deleting from Firebase:', target.firebaseId);
         await scheduleService.deleteScheduleEvent(target.firebaseId);
+      } else {
+        console.warn('No firebaseId found for session:', target.id);
       }
+      
+      // Delete associated practice data
+      try {
+        await practiceDataService.deletePracticeData(id);
+        console.log('Practice data deleted for session:', id);
+      } catch (practiceError) {
+        console.error('Failed to delete practice data:', practiceError);
+        // Continue with session deletion even if practice data fails
+      }
+      
+      // Clean up localStorage
+      localStorage.removeItem(`practiceData_${id}`);
+      localStorage.removeItem(`attendance_${id}`);
+      localStorage.removeItem(`summaries_${id}`);
+      localStorage.removeItem(`surveyPlayers_${id}`);
+      
       setSessions(prev => prev.filter(session => session.id !== id));
       setSelectedSessionId(prev => (prev === id ? null : prev));
       if (editorSessionId === id) {
         closeEditor();
       }
     } catch (error) {
-      console.error('Failed to delete session from Firebase:', error);
+      console.error('Failed to delete session:', error);
       alert('Failed to delete session. Please try again.');
     }
   };
@@ -2149,24 +2207,74 @@ export default function SchedulePlanner() {
             <div className="details-stats">
               <div className="details-stat">
                 <span className="details-stat__label">Total</span>
-                <span className="details-stat__value">{selectedMetrics.totalMinutes || 0}m</span>
+                <input
+                  type="number"
+                  value={selectedSession.totalMinutes || 0}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    mutateSession(selectedSession.id, session => ({
+                      ...session,
+                      totalMinutes: value === "" ? 0 : Number(value)
+                    }));
+                  }}
+                  className="details-stat__input"
+                  min="0"
+                />
+                <span className="details-stat__unit">min</span>
               </div>
               <div className="details-stat">
                 <span className="details-stat__label">High Intensity</span>
-                <span className="details-stat__value">{selectedMetrics.highMinutes || 0}m</span>
+                <input
+                  type="number"
+                  value={selectedSession.highIntensityMinutes || 0}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    mutateSession(selectedSession.id, session => ({
+                      ...session,
+                      highIntensityMinutes: value === "" ? 0 : Number(value)
+                    }));
+                  }}
+                  className="details-stat__input"
+                  min="0"
+                />
+                <span className="details-stat__unit">min</span>
               </div>
               <div className="details-stat">
                 <span className="details-stat__label">Courts</span>
-                <span className="details-stat__value">{selectedMetrics.courts || 0}</span>
+                <input
+                  type="number"
+                  value={selectedSession.courts || 0}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    mutateSession(selectedSession.id, session => ({
+                      ...session,
+                      courts: value === "" ? 0 : Number(value)
+                    }));
+                  }}
+                  className="details-stat__input"
+                  min="0"
+                />
               </div>
             </div>
 
-            {selectedSession.notes && (
-              <div className="details-notes">
-                <div className="details-section__title">Notes</div>
-                <p className="details-notes__body">{selectedSession.notes}</p>
-              </div>
-            )}
+            <div className="details-notes-edit" style={{ marginTop: '20px' }}>
+              <label className="schedule-section-title" htmlFor="details-notes">
+                Session Notes
+              </label>
+              <textarea
+                id="details-notes"
+                value={selectedSession.notes || ''}
+                onChange={(e) => {
+                  mutateSession(selectedSession.id, session => ({
+                    ...session,
+                    notes: e.target.value
+                  }));
+                }}
+                placeholder="Add notes about this session..."
+                className="schedule-textarea"
+                rows={4}
+              />
+            </div>
 
             <div className="details-section">
               <button
@@ -2214,6 +2322,7 @@ export default function SchedulePlanner() {
               >
                 Edit Session
               </button>
+              {/* Details Drawer Delete Button - using main deleteSession function */}
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -2470,6 +2579,7 @@ export default function SchedulePlanner() {
             </div>
 
             <div className="drawer-actions">
+              {/* Editor Drawer Delete Button - using same deleteSession function */}
               <button
                 type="button"
                 className="btn btn-ghost"
