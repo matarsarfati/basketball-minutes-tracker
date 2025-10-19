@@ -201,11 +201,19 @@ function GymSurvey() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedPlayer || !rpe) return;
+    if (!selectedPlayer || rpe === null) return;
 
-    const response = { rpe, notes };
+    const response = { 
+      rpe, 
+      notes: notes.trim(),
+      savedAt: new Date().toISOString() 
+    };
 
     try {
+      // Save to Firebase FIRST
+      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, response);
+      
+      // Then save to localStorage as backup
       const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
       store[`${sessionId}_gym`] = {
         ...(store[`${sessionId}_gym`] || {}),
@@ -213,16 +221,22 @@ function GymSurvey() {
       };
       localStorage.setItem(SURVEY_STORE_KEY, JSON.stringify(store));
 
-      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, response);
-      
+      // Update local state
       setSubmitted(prev => ({
         ...prev,
         [selectedPlayer]: response
       }));
 
+      // Show success and reset form
+      setRpe(null);
+      setNotes('');
+      setSelectedPlayer('');
       setShowSuccess(true);
+
+      console.log('✅ Gym survey saved successfully for:', selectedPlayer);
     } catch (err) {
-      console.error('Failed to save response:', err);
+      console.error('❌ Failed to save gym survey:', err);
+      alert('Failed to save response. Please try again.');
     }
   };
 
