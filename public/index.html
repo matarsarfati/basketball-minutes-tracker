@@ -18,6 +18,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
     <title>Basketball Schedule</title>
+    <style>
+      .practice-layout {
+        display: grid !important;
+        gap: 1.5rem !important;
+        padding: 1rem !important;
+        grid-template-columns: 1fr !important;
+      }
+
+      @media (min-width: 768px) {
+        .practice-layout {
+          grid-template-columns: 1fr 1fr 1.5fr !important;
+          align-items: start !important;
+        }
+      }
+
+      .practice-layout > div {
+        background: #fff !important;
+        border-radius: 8px !important;
+        padding: 1.5rem !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+      }
+    </style>
     <!--
       Notice the use of %PUBLIC_URL% in the tags above.
       It will be replaced with the URL of the `public` folder during the build.

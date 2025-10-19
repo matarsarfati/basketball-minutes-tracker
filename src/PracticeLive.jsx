@@ -26,20 +26,6 @@ const safeParse = (key, defaultValue) => {
   }
 };
 
-const globalStyles = `
-  .live-wrap { display: grid; grid-template-columns: 280px 1fr 320px; gap: 16px; }
-  .planned-list, .active-drill, .history-list, .survey-card { background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
-  .timers { display: flex; gap: 12px; flex-wrap: wrap; }
-  .timer-box { flex: 1 1 160px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center; background: #f8fafc; }
-  .controls button { margin-right: 6px; }
-  .player-mini { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px; margin: 6px 0; background: #fff; }
-  .bench-box { margin-top: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px; background: #fff; }
-  .history-list .item { border-bottom: 1px solid #eef2f7; padding: 8px 0; }
-  .history-list .item:last-child { border-bottom: 0; }
-  .survey-card table { width: 100%; border-collapse: collapse; }
-  .survey-card th, .survey-card td { border-bottom: 1px solid #eef2f7; padding: 6px; text-align: left; }
-`;
-
 const TYPE_COLORS = {
   Practice: { color: "#f59e0b", background: "rgba(245,158,11,.12)", border: "rgba(245,158,11,.35)" },
   Game: { color: "#dc2626", background: "rgba(220,38,38,.12)", border: "rgba(220,38,38,.35)" },
@@ -283,7 +269,9 @@ const buildPracticePdf = ({
   averages,
   attendance,
   drillRows,
-  practiceMetrics
+  practiceMetrics,
+  gymSurveyData,
+  gymSurveyAverages
 }) => {
   const doc = new jsPDF({ orientation: "portrait", format: "a4" });
   let currentY = 20;
@@ -423,21 +411,23 @@ const buildPracticePdf = ({
       name,
       data.rpe?.toString() || "—",
       data.legs?.toString() || "—",
+      gymSurveyData?.[name]?.rpe?.toString() || "—",
       data.notes || "—"
     ]);
 
   const responseCount = filteredSurveyRows.length;
   const avgRpe = averages?.rpe?.toFixed(1) || "—";
   const avgLegs = averages?.legs?.toFixed(1) || "—";
+  const avgGymRpe = gymSurveyAverages?.rpe?.toFixed(1) || "—";
 
   doc.setFontSize(11);
-  doc.text(`Averages: RPE ${avgRpe} • Legs ${avgLegs}`, 14, currentY);
+  doc.text(`Averages: RPE ${avgRpe} • Legs ${avgLegs} • Gym RPE ${avgGymRpe}`, 14, currentY);
   currentY += 6;
 
   if (filteredSurveyRows.length > 0) {
     autoTable(doc, {
       startY: currentY,
-      head: [["Player", "RPE", "Legs", "Notes"]],
+      head: [["Player", "RPE", "Legs", "Gym RPE", "Notes"]],
       body: filteredSurveyRows,
       styles: { fontSize: 10, cellPadding: 2 },
       headStyles: { fillColor: [29, 78, 216], textColor: 255 },
@@ -634,6 +624,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   // 5. Initialize survey-related state
   const [surveyData, setSurveyData] = useState(null);
   const [surveyAverages, setSurveyAverages] = useState({ rpe: 0, legs: 0 });
+  const [gymSurveyData, setGymSurveyData] = useState(null);
+  const [gymSurveyAverages, setGymSurveyAverages] = useState({ rpe: 0 });
 
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
@@ -676,6 +668,10 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         const allSurveys = JSON.parse(surveyStore);
         const sessionSurveys = allSurveys[session.id] || {};
         setSurveyData(sessionSurveys);
+        
+        // Add gym survey data loading
+        const gymSurveys = allSurveys[`${session.id}_gym`] || {};
+        setGymSurveyData(gymSurveys);
 
         const responses = Object.values(sessionSurveys);
         if (responses.length > 0) {
@@ -687,6 +683,16 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           setSurveyAverages({
             rpe: Number((totals.rpe / responses.length).toFixed(1)),
             legs: Number((totals.legs / responses.length).toFixed(1))
+          });
+        }
+
+        // Add gym survey averages calculation
+        const gymResponses = Object.values(gymSurveys);
+        if (gymResponses.length > 0) {
+          const gymTotal = gymResponses.reduce((acc, response) => 
+            acc + (Number(response.rpe) || 0), 0);
+          setGymSurveyAverages({
+            rpe: Number((gymTotal / gymResponses.length).toFixed(1))
           });
         }
       }
@@ -763,6 +769,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           attendance,
           surveyData,
           surveyAverages,
+          gymSurveyData,
+          gymSurveyAverages,
           surveyCompleted: Boolean(surveyData && Object.keys(surveyData).length > 0)
         });
       } catch (error) {
@@ -774,7 +782,9 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             drillRows,
             attendance,
             surveyData,
-            surveyAverages
+            surveyAverages,
+            gymSurveyData,
+            gymSurveyAverages
           }));
         } catch (localError) {
           console.error('Failed to save to localStorage:', localError);
@@ -784,7 +794,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     
     const timer = setTimeout(savePracticeData, 1000);
     return () => clearTimeout(timer);
-  }, [session?.id, metrics, drillRows, attendance, surveyData, surveyAverages]);
+  }, [session?.id, metrics, drillRows, attendance, surveyData, surveyAverages, gymSurveyData, gymSurveyAverages]);
 
   const updateMetrics = (type, field, value) => {
     setMetrics(prev => ({
@@ -883,7 +893,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   };
 
   const addDrillRow = () => {
-    setDrillRows([...drillRows, { name: '', courts: 0, totalTime: 0 }]);
+    setDrillRows([...drillRows, { name: '', courts: '', totalTime: '', highIntensity: '' }]);
   };
 
   const removeDrillRow = (index) => {
@@ -953,7 +963,9 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       averages: surveyAverages,
       attendance,
       drillRows,
-      practiceMetrics: metrics
+      practiceMetrics: metrics,
+      gymSurveyData,
+      gymSurveyAverages
     });
 
     doc.save(fileName);
@@ -996,6 +1008,42 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }
   };
 
+  const handleOpenGymSurvey = () => {
+    if (!session?.id) return;
+
+    const practiceData = {
+      metrics,
+      drillRows,
+      attendance,
+      gymSurveyData,
+      surveyCompleted: true
+    };
+    
+    try {
+      localStorage.setItem(
+        `${PRACTICE_DATA_KEY}${session.id}`, 
+        JSON.stringify(practiceData)
+      );
+
+      const presentPlayers = roster
+        .filter(player => attendance[player.name]?.present)
+        .map(player => ({
+          id: player.id,
+          name: player.name,
+          number: player.number
+        }));
+
+      localStorage.setItem(
+        `gymSurveyPlayers_${session.id}`, 
+        JSON.stringify(presentPlayers)
+      );
+
+      navigate(`/gym-survey/${session.id}`);
+    } catch (err) {
+      console.error('Failed to prepare gym survey:', err);
+    }
+  };
+
   const handleAttendanceChange = (player, update) => {
     setAttendance(prev => ({
       ...prev,
@@ -1021,6 +1069,9 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         </p>
         {surveyAverages.rpe > 0 && (
           <p>Team Averages: RPE {surveyAverages.rpe} • Legs {surveyAverages.legs}</p>
+        )}
+        {gymSurveyAverages.rpe > 0 && (
+          <p>Gym Averages: RPE {gymSurveyAverages.rpe}</p>
         )}
       </div>
     );
@@ -1063,7 +1114,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         </header>
 
         <div className="practice-layout">
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">Attendance</h2>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -1198,171 +1249,192 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             </div>
           </div>
 
-          <div className="practice-main">
-            <div className="bg-white rounded-lg shadow p-8">
-              <h2 className="text-xl font-bold mb-8">Practice Summary</h2>
+          <div className="practice-main bg-white rounded-lg shadow p-8">
+            <h2 className="text-xl font-bold mb-8">Practice Summary</h2>
               
-              <div className="mb-10">
-                <h3 className="font-semibold mb-4 text-gray-700">Practice Metrics</h3>
-                <table className="practice-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '15%' }}>Metric</th>
-                      <th style={{ width: '28%' }}>Total Time</th>
-                      <th style={{ width: '28%' }}>High Intensity</th>
-                      <th style={{ width: '29%' }}>Courts Used</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="font-medium">Planned</td>
-                      <td>
-                        <input 
-                          type="number" 
-                          value={metrics.planned.totalTime}
-                          onChange={e => updateMetrics('planned', 'totalTime', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="number"
-                          value={metrics.planned.highIntensity}
-                          onChange={e => updateMetrics('planned', 'highIntensity', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="number"
-                          value={metrics.planned.courtsUsed}
-                          onChange={e => updateMetrics('planned', 'courtsUsed', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="font-medium">Actual</td>
-                      <td>
-                        <input 
-                          type="number"
-                          value={metrics.actual.totalTime}
-                          onChange={e => updateMetrics('actual', 'totalTime', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="number"
-                          value={metrics.actual.highIntensity}
-                          onChange={e => updateMetrics('actual', 'highIntensity', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                      <td>
-                        <input 
-                          type="number"
-                          value={metrics.actual.courtsUsed}
-                          onChange={e => updateMetrics('actual', 'courtsUsed', e.target.value)}
-                          className="table-input" 
-                          min="0"
-                        />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+            <div className="mb-10">
+              <h3 className="font-semibold mb-4 text-gray-700">Practice Metrics</h3>
+              <table className="practice-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '15%' }}>Metric</th>
+                    <th style={{ width: '28%' }}>Total Time</th>
+                    <th style={{ width: '28%' }}>High Intensity</th>
+                    <th style={{ width: '29%' }}>Courts Used</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="font-medium">Planned</td>
+                    <td>
+                      <input 
+                        type="number" 
+                        value={metrics.planned.totalTime}
+                        onChange={e => updateMetrics('planned', 'totalTime', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.planned.highIntensity}
+                        onChange={e => updateMetrics('planned', 'highIntensity', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.planned.courtsUsed}
+                        onChange={e => updateMetrics('planned', 'courtsUsed', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="font-medium">Actual</td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.actual.totalTime}
+                        onChange={e => updateMetrics('actual', 'totalTime', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.actual.highIntensity}
+                        onChange={e => updateMetrics('actual', 'highIntensity', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.actual.courtsUsed}
+                        onChange={e => updateMetrics('actual', 'courtsUsed', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-              <div className="mb-10">
-                <h3 className="font-semibold mb-4 text-gray-700">Drill Details</h3>
-                <table className="practice-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '40%' }}>Name</th>
-                      <th style={{ width: '20%' }}>Courts</th>
-                      <th style={{ width: '25%' }}>Total Time (min)</th>
-                      <th style={{ width: '15%' }}></th>
+            <div className="mb-10">
+              <h3 className="font-semibold mb-4 text-gray-700">Drill Details</h3>
+              <table className="practice-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '30%' }}>Name</th>
+                    <th style={{ width: '22%' }}>Total Time (min)</th>
+                    <th style={{ width: '22%' }}>High Intensity (min)</th>
+                    <th style={{ width: '16%' }}>Courts</th>
+                    <th style={{ width: '10%' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drillRows.map((row, index) => (
+                    <tr key={index}>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => updateDrillRow(index, 'name', e.target.value)}
+                          className="table-input"
+                          placeholder="Drill name..."
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.totalTime || ''}
+                          onChange={(e) => updateDrillRow(index, 'totalTime', e.target.value)}
+                          className="table-input"
+                          placeholder=""
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.highIntensity || ''}
+                          onChange={(e) => updateDrillRow(index, 'highIntensity', e.target.value)}
+                          className="table-input"
+                          placeholder=""
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.courts || ''}
+                          onChange={(e) => updateDrillRow(index, 'courts', e.target.value)}
+                          className="table-input"
+                          placeholder=""
+                        />
+                      </td>
+                      <td className="text-center">
+                        <button
+                          onClick={() => removeDrillRow(index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {drillRows.map((row, index) => (
-                      <tr key={index}>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.name}
-                            onChange={(e) => updateDrillRow(index, 'name', e.target.value)}
-                            className="table-input"
-                            placeholder="Drill name..."
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={row.courts}
-                            onChange={(e) => updateDrillRow(index, 'courts', e.target.value)}
-                            className="table-input"
-                            min="0"
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={row.totalTime}
-                            onChange={(e) => updateDrillRow(index, 'totalTime', e.target.value)}
-                            className="table-input"
-                            min="0"
-                            placeholder="0"
-                          />
-                        </td>
-                        <td className="text-center">
-                          <button
-                            onClick={() => removeDrillRow(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <button
-                  onClick={addDrillRow}
-                  className="mt-4 w-full px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded font-medium"
-                >
-                  + Add Drill
-                </button>
-              </div>
+                  ))}
+                </tbody>
+              </table>
+              <button
+                onClick={addDrillRow}
+                className="mt-4 w-full px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded font-medium"
+              >
+                + Add Drill
+              </button>
+            </div>
 
-              <div className="practice-controls">
-                {renderSurveyStatus()}
-                <button
-                  onClick={handleExportPDF}
-                  className="py-2 px-4 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium"
-                >
-                  Export Summary PDF
-                </button>
+            <div className="practice-controls">
+              {renderSurveyStatus()}
+              <button
+                onClick={handleExportPDF}
+                className="py-2 px-4 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium"
+              >
+                Export Summary PDF
+              </button>
 
-                <button
-                  onClick={handleOpenSurvey}
-                  className="py-3 px-6 bg-green-500 text-white hover:bg-green-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
-                >
-                  <span>
-                    {Object.keys(surveyData || {}).length > 0 
-                      ? 'Continue Survey Responses' 
-                      : 'Finish Practice & Start Survey'}
-                  </span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
+              <button
+                onClick={handleOpenSurvey}
+                className="py-3 px-6 bg-green-500 text-white hover:bg-green-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                <span>
+                  {Object.keys(surveyData || {}).length > 0 
+                    ? 'Continue Court Survey' 
+                    : 'Start Court Survey'}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
+                </svg>
+              </button>
+
+              <button
+                onClick={handleOpenGymSurvey}
+                className="py-3 px-6 bg-purple-500 text-white hover:bg-purple-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                <span>
+                  {Object.keys(gymSurveyData || {}).length > 0 
+                    ? 'Continue Gym Survey' 
+                    : 'Start Gym Survey'}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                  <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>

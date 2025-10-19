@@ -1,3 +1,6 @@
+import { db } from '../config/firebase.js';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy } from 'firebase/firestore';
+
 const DB_NAME = 'workout-plans-db';
 const STORE_NAME = 'plans';
 const VERSION = 1;
@@ -36,4 +39,44 @@ export const loadPlans = async () => {
     console.error('Failed to load plans:', error);
     return [];
   }
+};
+
+export const savePlanToFirestore = async (plan) => {
+  const planData = {
+    ...plan,
+    updatedAt: new Date().toISOString(),
+    createdAt: plan.createdAt || new Date().toISOString(),
+    isArchived: plan.isArchived || false
+  };
+
+  if (plan.firebaseId) {
+    const docRef = doc(db, 'plans', plan.firebaseId);
+    await updateDoc(docRef, planData);
+    return plan.firebaseId;
+  }
+
+  const docRef = await addDoc(collection(db, 'plans'), planData);
+  return docRef.id;
+};
+
+export const loadPlansFromFirestore = async () => {
+  const q = query(collection(db, 'plans'), orderBy('updatedAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({
+    ...doc.data(),
+    firebaseId: doc.id
+  }));
+};
+
+export const archivePlan = async (planId) => {
+  const docRef = doc(db, 'plans', planId);
+  await updateDoc(docRef, {
+    isArchived: true,
+    updatedAt: new Date().toISOString()
+  });
+};
+
+export const deletePlanFromFirestore = async (planId) => {
+  const docRef = doc(db, 'plans', planId);
+  await deleteDoc(docRef);
 };

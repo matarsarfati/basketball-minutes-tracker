@@ -139,8 +139,40 @@ const PlanBuilderModal = ({
     }
   }, [isDragging, isResizing, handleMouseMove]);
 
+  useEffect(() => {
+    // Add default section if plan is empty
+    if (plan.length === 0) {
+      onUpdatePlan([{ type: 'break', title: 'Section 1' }]);
+    }
+    // Add initial section break if plan starts with exercises
+    else if (plan.length > 0 && plan[0].type !== 'break') {
+      onUpdatePlan([{ type: 'break', title: 'Section 1' }, ...plan]);
+    }
+  }, []);
+
   const addRowBreak = () => {
-    onUpdatePlan([...plan, { type: 'break' }]);
+    onUpdatePlan([...plan, { 
+      type: 'break',
+      title: 'New Section' // Default title for new sections
+    }]);
+  };
+
+  const updateSectionTitle = (rowIndex, newTitle) => {
+    const newPlan = [...plan];
+    let breakCount = 0;
+  
+    // Find the correct break item by row index
+    for (let i = 0; i < newPlan.length; i++) {
+      if (newPlan[i].type === 'break') {
+        if (breakCount === rowIndex) {
+          newPlan[i].title = newTitle;
+          break;
+        }
+        breakCount++;
+      }
+    }
+  
+    onUpdatePlan(newPlan);
   };
 
   const enrichedPlan = plan.map(item => {
@@ -429,56 +461,73 @@ const PlanBuilderModal = ({
         </button>
 
         <div className="max-w-7xl mx-auto px-8 pt-24 pb-6">
-          {rows.map((row, rowIndex) => (
-            <div key={rowIndex} className="mb-4">
-              <div className="grid grid-cols-4 gap-3">
-                {row.map((exercise, index) => (
-                  <div 
-                    key={index}
-                    className="bg-white border rounded-lg p-3"
-                  >
-                    <div className="aspect-w-1 aspect-h-1 mb-2">
-                      <img
-                        src={exercise.imageUrl}
-                        alt={exercise.name}
-                        className="w-full h-32 object-contain"
-                        loading="lazy"
-                      />
-                    </div>
+          {rows.map((row, rowIndex) => {
+            // Get section title using same logic as regular view
+            const sectionTitle = (() => {
+              let breakCount = 0;
+              for (let i = 0; i < plan.length; i++) {
+                if (plan[i].type === 'break') {
+                  if (breakCount === rowIndex) {
+                    return plan[i].title || `Section ${rowIndex + 1}`;
+                  }
+                  breakCount++;
+                }
+              }
+              return `Section ${rowIndex + 1}`;
+            })();
 
-                    <h3 className="text-base font-bold mb-1 text-center">
-                      {exercise.name}
-                    </h3>
+            return (
+              <div key={rowIndex} className="mb-12"> {/* Increased margin for better section separation */}
+                {/* Section Title */}
+                <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">
+                  {sectionTitle}
+                </h2>
 
-                    <div className="text-center">
-                      <span className="text-xl font-bold">
-                        {exercise.sets || '-'} × {exercise.reps || '-'}
-                      </span>
-                      <span className="text-sm ml-1">
-                        {exercise.repType || 'reps'}
-                      </span>
-                    </div>
-
-                    {exercise.notes && (
-                      <div className="text-sm text-gray-600 italic mt-1 text-center">
-                        {exercise.notes}
+                {/* Exercise Grid */}
+                <div className="grid grid-cols-4 gap-3">
+                  {row.map((exercise, index) => (
+                    <div 
+                      key={index}
+                      className="bg-white border rounded-lg p-3"
+                    >
+                      <div className="aspect-w-1 aspect-h-1 mb-2">
+                        <img
+                          src={exercise.imageUrl}
+                          alt={exercise.name}
+                          className="w-full h-32 object-contain"
+                          loading="lazy"
+                        />
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
 
-              {rowIndex < rows.length - 1 && (
-                <div className="flex items-center justify-center my-3">
-                  <div className="flex-1 border-t border-gray-200"></div>
-                  <span className="px-4 text-sm text-gray-400">
-                    Section Break
-                  </span>
-                  <div className="flex-1 border-t border-gray-200"></div>
+                      <h3 className="text-base font-bold mb-1 text-center">
+                        {exercise.name}
+                      </h3>
+
+                      <div className="text-center">
+                        <span className="text-xl font-bold">
+                          {exercise.sets || '-'} × {exercise.reps || '-'}
+                        </span>
+                        <span className="text-sm ml-1">
+                          {exercise.repType || 'reps'}
+                        </span>
+                      </div>
+
+                      {exercise.notes && (
+                        <div className="text-sm text-gray-600 italic mt-1 text-center">
+                          {exercise.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Optional subtle divider between sections */}
+                {rowIndex < rows.length - 1 && (
+                  <div className="mt-8 border-b border-gray-100" />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -605,17 +654,58 @@ const PlanBuilderModal = ({
         >
           <div>
             {rows.map((row, rowIndex) => {
-              let rowStartIndex = 0;
-              for (let i = 0; i < rowIndex; i++) {
-                rowStartIndex += rows[i].length;
-                if (i < rowIndex) rowStartIndex += 1;
+              // Create a map of exercises to their actual indices in the plan array
+              const exerciseIndices = [];
+              let exerciseCount = 0;
+              
+              for (let i = 0; i < plan.length; i++) {
+                if (plan[i].type !== 'break') {
+                  exerciseIndices.push(i);
+                }
               }
 
               return (
-                <div key={rowIndex}>
+                <div key={rowIndex} className="mb-8">
+                  {/* Section Title Input */}
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      value={(() => {
+                        let breakCount = 0;
+                        for (let i = 0; i < plan.length; i++) {
+                          if (plan[i].type === 'break') {
+                            if (breakCount === rowIndex) {
+                              return plan[i].title || '';
+                            }
+                            breakCount++;
+                          }
+                        }
+                        return '';
+                      })()}
+                      onChange={(e) => updateSectionTitle(rowIndex, e.target.value)}
+                      onFocus={(e) => isEditMode && e.target.select()}
+                      disabled={!isEditMode}
+                      className={`w-full px-4 py-2 text-lg font-medium border
+                                rounded-md transition-colors ${
+                                  isEditMode 
+                                    ? 'border-gray-200 bg-white hover:border-blue-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500' 
+                                    : 'border-transparent bg-gray-50 text-gray-700'
+                                }`}
+                      placeholder={isEditMode ? "Click to name section..." : ""}
+                    />
+                  </div>
+
                   <div className="plan-exercise-row">
                     {row.map((exercise, indexInRow) => {
-                      const currentIndex = rowStartIndex + indexInRow;
+                      // Calculate which exercise number this is overall
+                      let overallExerciseIndex = 0;
+                      for (let r = 0; r < rowIndex; r++) {
+                        overallExerciseIndex += rows[r].length;
+                      }
+                      overallExerciseIndex += indexInRow;
+                      
+                      // Get the actual index in the plan array
+                      const currentIndex = exerciseIndices[overallExerciseIndex];
 
                       return (
                         <div
@@ -658,31 +748,30 @@ const PlanBuilderModal = ({
                               <div className="flex items-center gap-1 mb-1">
                                 <input
                                   type="number"
+                                  min="0"
                                   placeholder="Sets"
                                   value={exercise.sets || ''}
                                   onChange={(e) => updateExercise(currentIndex, { 
                                     sets: e.target.value 
                                   })}
-                                  className="plan-input"
-                                  disabled={!isEditMode}
+                                  className="plan-input w-16"
                                 />
                                 ×
                                 <input
                                   type="number"
+                                  min="0"
                                   placeholder="Reps"
                                   value={exercise.reps || ''}
                                   onChange={(e) => updateExercise(currentIndex, {
                                     reps: e.target.value
                                   })}
-                                  className="plan-input"
-                                  disabled={!isEditMode}
+                                  className="plan-input w-16"
                                 />
                                 <CompactRepTypeSelect
                                   value={exercise.repType || 'reps'}
                                   onChange={(value) => updateExercise(currentIndex, {
                                     repType: value
                                   })}
-                                  disabled={!isEditMode}
                                 />
                               </div>
                               <input
@@ -693,7 +782,6 @@ const PlanBuilderModal = ({
                                   notes: e.target.value
                                 })}
                                 className="w-full text-sm px-1 py-0.5 border rounded"
-                                disabled={!isEditMode}
                               />
                             </>
                           ) : (
@@ -713,18 +801,13 @@ const PlanBuilderModal = ({
                     })}
                   </div>
 
-                  {rowIndex < rows.length - 1 && (
-                    <div className="text-center text-gray-400 font-semibold text-sm py-1">
-                      Section Break
-                    </div>
-                  )}
-
-                  {/* Add section controls */}
+                  {/* Remove the old section break rendering since we now show titles above */}
                   {!isPrintMode && (
                     <div className="text-center py-2">
                       <button
                         onClick={() => handleMultipleExercisesAdd(rowIndex)}
-                        className="text-xs px-3 py-1 border border-dashed border-gray-300 rounded hover:bg-gray-50"
+                        className="text-xs px-3 py-1 border border-dashed border-gray-300 
+                                 rounded hover:bg-gray-50"
                       >
                         + Add Exercises
                       </button>
