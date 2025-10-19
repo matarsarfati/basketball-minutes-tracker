@@ -7,6 +7,7 @@ import SurveyForm from './SurveyForm';
 import GymLayout from './components/layout/GymLayout';
 import GymPage from './pages/GymPage';
 import './index.css';
+import GymSurvey from './GymSurvey';
 
 const PracticeLive = lazy(() => import('./PracticeLive'));
 
@@ -30,6 +31,10 @@ const router = createBrowserRouter([
   {
     path: "/survey/:sessionId",
     element: <SurveyForm />,
+  },
+  {
+    path: "/gym-survey/:sessionId",
+    element: <GymSurvey />,
   },
   {
     element: <GymLayout />,

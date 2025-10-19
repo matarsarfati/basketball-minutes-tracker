@@ -1,137 +1,336 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
+import "./SurveyForm.css";
+import { practiceDataService } from './services/practiceDataService';
 
 const SURVEY_STORE_KEY = "practiceSurveysV1";
 
-const safeParse = (key, defaultValue) => {
-  if (typeof window === "undefined") return defaultValue;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw === null || raw === undefined) return defaultValue;
-    const parsed = JSON.parse(raw);
-    return parsed ?? defaultValue;
-  } catch {
-    return defaultValue;
+const GYM_RPE_SHORT = {
+  1: "Very light",
+  2: "Light",
+  3: "Moderate",
+  4: "Somewhat hard",
+  5: "Hard",
+  6: "Harder",
+  7: "Very hard",
+  8: "Extremely hard",
+  9: "Near maximal",
+  10: "Maximal effort",
+};
+
+// Helper functions
+function rpeShort(value) {
+  return GYM_RPE_SHORT[value] || `${value}`;
+}
+
+function rpeEmoji(value) {
+  const EMOJI = ["😴", "🙂", "😊", "😌", "😰", "😕", "😣", "😫", "😬", "😱"];
+  return EMOJI[value - 1] || "🙂";
+}
+
+const styles = {
+  section: {
+    marginBottom: "1.5rem",
+  },
+  bar: {
+    position: "relative",
+    height: "8px",
+    background: "linear-gradient(to right, #22c55e, #f59e0b, #ef4444)",
+    borderRadius: "999px",
+    marginBottom: "1rem",
+  },
+  track: {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+  },
+  thumb: {
+    position: "absolute",
+    top: "50%",
+    width: "20px",
+    height: "20px",
+    backgroundColor: "#fff",
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%)",
+    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+    border: "2px solid currentColor",
+    transition: "left 0.1s ease-out",
+  },
+  tokenGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: "0.5rem",
+    marginTop: "1rem",
+  },
+  token: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "0.5rem",
+    background: "#F3F4F6",
+    borderRadius: "0.5rem",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  },
+  tokenActive: {
+    background: "#4B5563",
+    color: "white",
+  },
+  emoji: {
+    fontSize: "1.25rem",
+    marginBottom: "0.25rem",
+  },
+  number: {
+    fontSize: "0.875rem",
+    fontWeight: "500",
   }
+};
+
+const QUESTION_LABELS = {
+  rpe: "Session Intensity (RPE) — 1 to 10"
 };
 
 function GymSurvey() {
   const { sessionId } = useParams();
-  const navigate = useNavigate();
-  const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [players, setPlayers] = useState([]);
-  const [responses, setResponses] = useState({});
-  const [currentRPE, setCurrentRPE] = useState(5);
+  const [selectedPlayer, setSelectedPlayer] = useState('');
+  const [rpe, setRpe] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [submitted, setSubmitted] = useState({});
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    const players = safeParse(`gymSurveyPlayers_${sessionId}`, []);
-    setPlayers(players);
+    const loadData = async () => {
+      try {
+        const players = JSON.parse(localStorage.getItem(`gymSurveyPlayers_${sessionId}`) || '[]');
+        setPlayers(players);
 
-    // Load existing responses
-    const allSurveys = safeParse(SURVEY_STORE_KEY, {});
-    const existingResponses = allSurveys[`${sessionId}_gym`] || {};
-    setResponses(existingResponses);
-  }, [sessionId]);
+        const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
+        const existing = store[`${sessionId}_gym`] || {};
+        setSubmitted(existing);
 
-  const handleNext = () => {
-    const player = players[currentPlayerIndex];
-    if (!player) return;
-
-    const updatedResponses = {
-      ...responses,
-      [player.name]: {
-        rpe: currentRPE
+        if (players.length > 0) {
+          const firstPending = players.find(p => !existing[p.name]);
+          setSelectedPlayer(firstPending?.name || players[0].name);
+        }
+      } catch (err) {
+        console.error('Failed to load data:', err);
       }
     };
+    loadData();
+  }, [sessionId]);
 
-    // Save to localStorage
-    const allSurveys = safeParse(SURVEY_STORE_KEY, {});
-    localStorage.setItem(
-      SURVEY_STORE_KEY,
-      JSON.stringify({
-        ...allSurveys,
-        [`${sessionId}_gym`]: updatedResponses
-      })
+  const renderControl = (type, currentValue, setter) => {
+    const emojiFor = rpeEmoji;  // Since we only have RPE
+    const shortFor = rpeShort;
+    const hasValue = typeof currentValue === "number" && currentValue >= 1 && currentValue <= 10;
+    const displayValue = hasValue ? currentValue : 5;
+
+    const applyValue = (newValue) => {
+      setter(newValue);
+      setShowSuccess(false);
+    };
+
+    const thumbStyle = {
+      ...styles.thumb,
+      left: `${((displayValue - 1) / 9) * 100}%`,
+      opacity: hasValue ? 1 : 0.4,
+    };
+
+    return (
+      <div style={styles.section}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{QUESTION_LABELS[type]}</div>
+        <div className="scaleSection" style={{ marginTop: 4 }}>
+          <div className="sliderBar">
+            <div style={styles.bar}>
+              <div style={styles.track}>
+                <div style={thumbStyle} />
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={displayValue}
+                  onChange={(event) => applyValue(Number(event.target.value))}
+                  style={{
+                    position: "absolute",
+                    top: -12,
+                    left: 0,
+                    width: "100%",
+                    height: 32,
+                    opacity: 0,
+                    cursor: "pointer",
+                  }}
+                  aria-valuenow={displayValue}
+                  aria-valuemin={1}
+                  aria-valuemax={10}
+                  aria-label={QUESTION_LABELS[type]}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="scaleSelected">
+            <span className="tokenEmoji">{emojiFor(displayValue)}</span>
+            <span style={{ marginLeft: 6, fontSize: 12, color: hasValue ? "#374151" : "#94a3b8" }}>
+              {hasValue
+                ? `Selected: ${displayValue} — ${shortFor(displayValue)}`
+                : "Selected: none yet"}
+            </span>
+          </div>
+          <div className="scaleRow">
+            {[1,2,3,4,5,6,7,8,9,10].map((level) => {
+              const selected = hasValue && level === displayValue;
+              return (
+                <button
+                  key={`rpe-token-${level}`}
+                  type="button"
+                  onClick={() => applyValue(level)}
+                  className={`scaleToken${selected ? " active" : ""}`}
+                  aria-pressed={selected}
+                >
+                  <span className="tokenEmoji">{emojiFor(level)}</span>
+                  <span className="tokenNum">{level}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     );
+  };
 
-    setResponses(updatedResponses);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedPlayer || !rpe) return;
 
-    if (currentPlayerIndex < players.length - 1) {
-      setCurrentPlayerIndex(currentPlayerIndex + 1);
-      setCurrentRPE(5); // Reset RPE for next player
-    } else {
-      navigate(`/practice/${sessionId}`);
+    const response = { rpe, notes };
+
+    try {
+      const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
+      store[`${sessionId}_gym`] = {
+        ...(store[`${sessionId}_gym`] || {}),
+        [selectedPlayer]: response
+      };
+      localStorage.setItem(SURVEY_STORE_KEY, JSON.stringify(store));
+
+      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, response);
+      
+      setSubmitted(prev => ({
+        ...prev,
+        [selectedPlayer]: response
+      }));
+
+      setShowSuccess(true);
+    } catch (err) {
+      console.error('Failed to save response:', err);
     }
   };
 
-  const player = players[currentPlayerIndex];
-  if (!player) return null;
+  const pendingPlayers = players.filter(p => !submitted[p.name]);
 
-  const existingResponse = responses[player.name];
-  
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-lg mx-auto">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            Gym Session Feedback
-          </h1>
-          
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-lg font-medium text-gray-900">
-                {player.name}
-              </span>
-              <span className="text-sm text-gray-500">
-                {currentPlayerIndex + 1} of {players.length}
+    <div className="survey-form">
+      <div className="survey-wrap">
+        <div className="survey-card">
+          <Link to={`/practice/${sessionId}`} className="back-link">
+            ← Back to Practice
+          </Link>
+
+          <h1 className="survey-title">Gym Session Feedback</h1>
+
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <div className="status-header">
+              <span className="text-2xl font-bold text-purple-600">
+                {Object.keys(submitted).length} of {players.length} players completed
               </span>
             </div>
-            <div className="h-2 bg-gray-200 rounded-full">
-              <div
-                className="h-2 bg-purple-500 rounded-full transition-all"
-                style={{
-                  width: `${((currentPlayerIndex + 1) / players.length) * 100}%`,
+            {pendingPlayers.length > 0 && (
+              <div className="status-body">
+                <div className="status-label">Still waiting for:</div>
+                <div className="flex flex-wrap gap-2">
+                  {pendingPlayers.map(player => (
+                    <span
+                      key={player.name}
+                      className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
+                    >
+                      {player.name} {player.number ? `#${player.number}` : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showSuccess ? (
+            <div className="success-wrap">
+              <div className="success-title">✅ Response Saved!</div>
+              <p className="mb-4">Hand the phone to the next player.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccess(false);
+                  setSelectedPlayer('');
+                  setRpe(null);
+                  setNotes('');
                 }}
-              />
+                className="survey-primary w-full"
+                style={{ backgroundColor: '#8b5cf6' }}
+              >
+                Next Player →
+              </button>
             </div>
-          </div>
-
-          <div className="space-y-8">
-            <div>
-              <label className="block text-lg font-medium text-gray-900 mb-4">
-                Session Intensity (RPE)
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={currentRPE}
-                onChange={(e) => setCurrentRPE(Number(e.target.value))}
-                className="w-full accent-purple-500"
-              />
-              <div className="flex justify-between text-sm text-gray-600 mt-2">
-                <span>Very Easy (1)</span>
-                <span>Very Hard (10)</span>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label>Player</label>
+                <select
+                  value={selectedPlayer}
+                  onChange={e => {
+                    setSelectedPlayer(e.target.value);
+                    const existing = submitted[e.target.value];
+                    if (existing) {
+                      setRpe(existing.rpe);
+                      setNotes(existing.notes || '');
+                    } else {
+                      setRpe(5);
+                      setNotes('');
+                    }
+                  }}
+                  className="player-select"
+                >
+                  {players.map(p => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} {submitted[p.name] ? '✓' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="text-center text-2xl font-bold text-purple-600 mt-2">
-                {currentRPE}
+
+              <div className="form-group">
+                <label>{QUESTION_LABELS.rpe}</label>
+                {renderControl("rpe", rpe, setRpe)}
               </div>
-            </div>
-          </div>
 
-          <div className="mt-8">
-            <button
-              onClick={handleNext}
-              className="w-full py-3 px-4 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 transition-colors"
-            >
-              {currentPlayerIndex < players.length - 1 ? "Next Player" : "Finish"}
-            </button>
-          </div>
+              <div className="form-group">
+                <label>Notes (Optional)</label>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  className="notes-input"
+                  rows={3}
+                  placeholder="Any additional comments..."
+                />
+              </div>
 
-          {existingResponse && (
-            <p className="mt-4 text-sm text-gray-500 text-center">
-              Previous response: RPE {existingResponse.rpe}
-            </p>
+              <button
+                type="submit"
+                className="survey-primary"
+                style={{ backgroundColor: '#8b5cf6' }}
+                disabled={!selectedPlayer || rpe === null}
+              >
+                Save Response
+              </button>
+            </form>
           )}
         </div>
       </div>
