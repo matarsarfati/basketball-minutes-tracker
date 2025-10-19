@@ -736,6 +736,10 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           setAttendance(practiceData.attendance || {});
           setSurveyData(practiceData.surveyData || null);
           setSurveyAverages(practiceData.surveyAverages || { rpe: 0, legs: 0 });
+          
+          // Load gym survey data
+          setGymSurveyData(practiceData.gymSurveyData || null);
+          setGymSurveyAverages(practiceData.gymSurveyAverages || { rpe: 0 });
         }
       } catch (error) {
         console.error('Failed to load practice data:', error);
@@ -751,6 +755,10 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           setAttendance(data.attendance || {});
           setSurveyData(data.surveyData || null);
           setSurveyAverages(data.surveyAverages || { rpe: 0, legs: 0 });
+          
+          // Load gym survey data from localStorage fallback
+          setGymSurveyData(data.gymSurveyData || null);
+          setGymSurveyAverages(data.gymSurveyAverages || { rpe: 0 });
         }
       }
     };
