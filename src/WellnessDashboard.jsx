@@ -85,13 +85,7 @@ export default function WellnessDashboard() {
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <button
-          onClick={() => navigate('/schedule')}
-          className="text-gray-600 hover:text-gray-800"
-        >
-          ← Back to Schedule
-        </button>
+      <div className="flex justify-end mb-6">
         <button
           onClick={() => navigate('/wellness/survey')}
           className="px-4 py-2 bg-[#14b8a6] text-white rounded-lg hover:bg-[#0d9488] flex items-center gap-2"
