@@ -1,6 +1,6 @@
 // src/SchedulePlanner.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
@@ -641,6 +641,7 @@ const loadLocalStorage = () => {
 };
 
 export default function SchedulePlanner() {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false); // Add this line
@@ -1887,6 +1888,22 @@ export default function SchedulePlanner() {
             disabled={isExporting}
           >
             {isExporting ? "Generating PDF..." : "Export PDF"}
+          </button>
+          <button
+            onClick={() => navigate('/wellness')}
+            className="btn btn-secondary"
+            style={{
+              backgroundColor: '#14b8a6',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            💪 Daily Wellness Check
           </button>
         </div>
 

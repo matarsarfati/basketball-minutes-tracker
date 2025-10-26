@@ -305,11 +305,11 @@ const buildPracticePdf = ({
       ["Planned", 
        `${practiceMetrics?.planned?.totalTime || "—"}`,
        `${practiceMetrics?.planned?.highIntensity || "—"}`,
-       `${practiceMetrics?.planned?.courts || "—"}`],
+       `${practiceMetrics?.planned?.courtsUsed || "0"}`],
       ["Actual", 
        `${practiceMetrics?.actual?.totalTime || "—"}`,
        `${practiceMetrics?.actual?.highIntensity || "—"}`,
-       `${practiceMetrics?.actual?.courts || "—"}`]
+       `${practiceMetrics?.actual?.courtsUsed || "0"}`]
     ],
     styles: { fontSize: 10, cellPadding: 2 },
     headStyles: { fillColor: [29, 78, 216], textColor: 255 },
@@ -328,26 +328,12 @@ const buildPracticePdf = ({
     row.totalTime?.toString() || "—"
   ]);
 
-  // Calculate totals
-  const drillTotals = drillRows.reduce((acc, row) => ({
-    courts: acc.courts + (Number(row.courts) || 0),
-    time: acc.time + (Number(row.totalTime) || 0)
-  }), { courts: 0, time: 0 });
-
-  // Add totals row
-  drillTableRows.push([
-    "TOTALS",
-    drillTotals.courts.toString(),
-    drillTotals.time.toString()
-  ]);
-
   autoTable(doc, {
     startY: currentY,
     head: [["Drill Name", "Courts", "Total Time (min)"]],
     body: drillTableRows,
     styles: { fontSize: 10, cellPadding: 2 },
-    headStyles: { fillColor: [29, 78, 216], textColor: 255 },
-    footStyles: { fillColor: [241, 245, 249], fontStyle: 'bold' }
+    headStyles: { fillColor: [29, 78, 216], textColor: 255 }
   });
 
   currentY = doc.lastAutoTable.finalY + 12;
@@ -963,6 +949,11 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   }, [attendance, session?.id]);
 
   const handleExportPDF = () => {
+    console.log('=== PDF Export Debug ===');
+    console.log('metrics:', metrics);
+    console.log('metrics.planned.courtsUsed:', metrics.planned.courtsUsed);
+    console.log('metrics.actual.courtsUsed:', metrics.actual.courtsUsed);
+    
     const { doc, fileName } = buildPracticePdf({
       session,
       summaries: sessionSummaries,
@@ -971,7 +962,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       averages: surveyAverages,
       attendance,
       drillRows,
-      practiceMetrics: metrics,
+      practiceMetrics: metrics,  // <-- Make sure this is correct
       gymSurveyData,
       gymSurveyAverages
     });

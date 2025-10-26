@@ -8,6 +8,9 @@ import GymLayout from './components/layout/GymLayout';
 import GymPage from './pages/GymPage';
 import './index.css';
 import GymSurvey from './GymSurvey';
+import WellnessSurvey from './WellnessSurvey';
+import WellnessDashboard from './WellnessDashboard';
+import WellnessForm from './WellnessForm';
 
 const PracticeLive = lazy(() => import('./PracticeLive'));
 
@@ -35,6 +38,14 @@ const router = createBrowserRouter([
   {
     path: "/gym-survey/:sessionId",
     element: <GymSurvey />,
+  },
+  {
+    path: "/wellness",
+    element: <WellnessDashboard />
+  },
+  {
+    path: "/wellness/survey",
+    element: <WellnessForm />
   },
   {
     element: <GymLayout />,
