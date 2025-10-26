@@ -13,6 +13,7 @@ import autoTable from "jspdf-autotable";
 import './styles.css';
 import { rosterService } from './services/rosterService';
 import { practiceDataService } from './services/practiceDataService';
+import { wellnessService } from './services/wellnessService';
 
 const safeParse = (key, defaultValue) => {
   if (typeof window === "undefined") return defaultValue;
@@ -181,6 +182,23 @@ const formatTimestampToHM = timestamp => {
   });
 };
 
+const formatSessionTime = (session) => {
+  const time = session?.startTime || session?.time;
+  if (!time) return "—";
+  if (typeof time === 'string' && time.includes(':')) return time;
+  try {
+    const date = new Date(time);
+    if (isNaN(date.getTime())) return time;
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return time;
+  }
+};
+
 const truncateNote = note => {
   if (!note) return "";
   const trimmed = note.trim();
@@ -260,6 +278,18 @@ const sanitizeFileNamePart = value =>
     .replace(/[^0-9a-zA-Z_-]+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
+
+const validatePrePracticeData = (data) => {
+  if (!data.session) {
+    throw new Error('Session data is required');
+  }
+  if (!data.metrics?.planned) {
+    throw new Error('Practice metrics (planned) are required');
+  }
+  if (!Array.isArray(data.roster) || data.roster.length === 0) {
+    throw new Error('Invalid roster');
+  }
+};
 
 const buildPracticePdf = ({
   session,
@@ -447,12 +477,216 @@ const buildPracticePdf = ({
   return { doc, fileName };
 };
 
+const WELLNESS_COLORS = {
+  good: [16, 185, 129],     // rgb(16, 185, 129)  - green
+  moderate: [245, 158, 11], // rgb(245, 158, 11)  - yellow
+  poor: [239, 68, 68]       // rgb(239, 68, 68)   - red
+};
+
+const getWellnessColor = (value, metric) => {
+  if (!value || typeof value !== 'number') return [255, 255, 255]; // white for no data
+
+  switch (metric) {
+    case 'sleep':
+      if (value >= 7) return WELLNESS_COLORS.good;
+      if (value >= 5) return WELLNESS_COLORS.moderate;
+      return WELLNESS_COLORS.poor;
+      
+    case 'fatigue':
+    case 'soreness':
+      if (value <= 4) return WELLNESS_COLORS.good;
+      if (value <= 6) return WELLNESS_COLORS.moderate;
+      return WELLNESS_COLORS.poor;
+      
+    default:
+      return [255, 255, 255];
+  }
+};
+
+const checkWellnessData = (wellnessData) => {
+  if (!wellnessData) return false;
+  if (!wellnessData.responses) return false;
+  if (!wellnessData.averages) return false;
+  
+  const hasResponses = Object.keys(wellnessData.responses).length > 0;
+  const hasValidAverages = Object.values(wellnessData.averages).some(v => v > 0);
+  
+  return hasResponses || hasValidAverages;
+};
+
+const getWellnessStatus = (metric, value) => {
+  if (!value || value === '—') return '—';
+
+  switch (metric) {
+    case 'sleep':
+      if (value >= 7) return '✓ Good';
+      if (value >= 5) return '⚠️ Moderate';
+      return '❌ Poor';
+
+    case 'fatigue':
+    case 'soreness':
+      if (value <= 4) return '✓ Good';
+      if (value <= 6) return '⚠️ Moderate';
+      return '❌ Poor';
+
+    default:
+      return '—';
+  }
+};
+
+const buildPrePracticePdf = ({
+  session,
+  metrics,
+  drillRows,
+  attendance,
+  wellnessData,
+  roster
+}) => {
+  try {
+    validatePrePracticeData({ session, metrics, roster });
+
+    const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+    let currentY = 20;
+
+    // Title
+    doc.setFontSize(24);
+    doc.setTextColor(29, 78, 216);
+    doc.text("Pre-Practice Report", 14, currentY);
+    currentY += 24;
+
+    // Session Info
+    const dateStr = new Date(session?.date || new Date()).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text(dateStr, 14, currentY);
+    currentY += 8;
+    doc.text(`Start Time: ${formatSessionTime(session)}`, 14, currentY);
+    currentY += 8;
+    doc.text(`Session Type: ${session?.type || "Practice"}`, 14, currentY);
+    currentY += 24;
+
+    // Planned Metrics Table
+    doc.setFontSize(14);
+    doc.setTextColor(29, 78, 216);
+    doc.text("Planned Practice Metrics", 14, currentY);
+    currentY += 12;
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Metric", "Value"]],
+      body: [
+        ["Total Time (min)", metrics?.planned?.totalTime?.toString() || "—"],
+        ["High Intensity (min)", metrics?.planned?.highIntensity?.toString() || "—"],
+        ["Courts Used", metrics?.planned?.courtsUsed?.toString() || "—"]
+      ],
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [29, 78, 216], textColor: 255 }
+    });
+
+    currentY = doc.lastAutoTable.finalY + 16;
+
+    // Add Team Wellness Summary section
+    doc.setFontSize(14);
+    doc.setTextColor(29, 78, 216);
+    doc.text("Team Wellness Summary", 14, currentY);
+    currentY += 12;
+
+    // Calculate team averages
+    const teamAverages = {
+      sleep: wellnessData.averages?.sleep?.toFixed(1) || '—',
+      fatigue: wellnessData.averages?.fatigue?.toFixed(1) || '—',
+      soreness: wellnessData.averages?.soreness?.toFixed(1) || '—'
+    };
+
+    // Calculate response rates
+    const totalPlayers = roster.length;
+    const respondedPlayers = Object.keys(wellnessData.responses || {}).length;
+    const responseRate = ((respondedPlayers / totalPlayers) * 100).toFixed(0);
+
+    // Add team summary table
+    autoTable(doc, {
+      startY: currentY,
+      head: [["Metric", "Team Average"]],
+      body: [
+        ["Sleep", teamAverages.sleep],
+        ["Fatigue", teamAverages.fatigue],
+        ["Soreness", teamAverages.soreness],
+        ["Response Rate", `${responseRate}% (${respondedPlayers}/${totalPlayers})`]
+      ],
+      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [29, 78, 216], textColor: 255 }
+    });
+
+    currentY = doc.lastAutoTable.finalY + 20;
+
+    // Wellness Data Table
+    if (wellnessData?.responses && Object.keys(wellnessData.responses).length > 0) {
+      doc.setFontSize(14);
+      doc.setTextColor(29, 78, 216);
+      doc.text("Player Wellness Status", 14, currentY);
+      currentY += 12;
+
+      const wellnessRows = Object.entries(wellnessData.responses).map(([name, data]) => [
+        name,
+        data.sleep?.toString() || "—",
+        data.fatigue?.toString() || "—",
+        data.soreness?.toString() || "—",
+        data.notes || "—"
+      ]);
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [["Player", "Sleep", "Fatigue", "Soreness", "Notes"]],
+        body: wellnessRows,
+        styles: { fontSize: 10, cellPadding: 4 },
+        headStyles: { fillColor: [29, 78, 216], textColor: 255 },
+        didParseCell: data => {
+          if (data.section === 'body') {
+            const row = data.row.cells;
+            const sleep = Number(row[1].text);
+            const fatigue = Number(row[2].text);
+            const soreness = Number(row[3].text);
+            
+            if (
+              (fatigue >= 7 || soreness >= 7) || // High fatigue/soreness
+              (sleep <= 3 && !isNaN(sleep))      // Poor sleep quality
+            ) {
+              for (let i = 0; i < row.length; i++) {
+                data.cell.styles.fillColor = [254, 226, 226]; // Light red
+              }
+            }
+          }
+        }
+      });
+
+      currentY = doc.lastAutoTable.finalY + 20;
+    }
+
+    // Generate filename
+    const fileDate = sanitizeFileNamePart(session?.date) || sanitizeFileNamePart(getTodayISO());
+    const fileName = `pre_practice_${fileDate}.pdf`;
+
+    // Return both doc and fileName
+    return { doc, fileName };
+    
+  } catch (error) {
+    console.error('Failed to generate pre-practice PDF:', error);
+    throw new Error('PDF generation failed. Please try again.');
+  }
+};
+
 const ATTENDANCE_KEY = "practiceAttendanceV1";
 
 const buildAttendanceSection = (doc, attendance, startY) => {
   const present = [];
   const absent = [];
-  
+
   Object.entries(attendance).forEach(([name, record]) => {
     if (record.present) {
       present.push(name);
@@ -473,7 +707,7 @@ const buildAttendanceSection = (doc, attendance, startY) => {
     doc.setFontSize(11);
     doc.text(`Present (${present.length}):`, 14, currentY);
     currentY += 6;
-    
+
     doc.setFontSize(10);
     const presentText = present.join(', ');
     const splitPresent = doc.splitTextToSize(presentText, 180);
@@ -485,7 +719,7 @@ const buildAttendanceSection = (doc, attendance, startY) => {
     doc.setFontSize(11);
     doc.text(`Absent (${absent.length}):`, 14, currentY);
     currentY += 6;
-    
+
     autoTable(doc, {
       startY: currentY,
       head: [['Player', 'Reason']],
@@ -495,7 +729,7 @@ const buildAttendanceSection = (doc, attendance, startY) => {
       margin: { left: 14 },
       tableWidth: 180,
     });
-    
+
     currentY = doc.lastAutoTable.finalY + 10;
   }
 
@@ -521,12 +755,10 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         String(session.id) === String(sessionId)),
     [numericSessionId, sessionId]
   );
-
   const sessionIndex = useMemo(
     () => sessionsData.findIndex(matchSession),
     [sessionsData, matchSession]
   );
-
   const session = sessionIndex >= 0 ? sessionsData[sessionIndex] : null;
 
   // 3. Initialize roster and other basic state
@@ -539,6 +771,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     plannedIntensity: "",
     plannedCourts: "",
   });
+  const [toastMessage, setToastMessage] = useState('');
 
   // 4. Initialize session-dependent state
   const [metrics, setMetrics] = useState(() => {
@@ -612,18 +845,22 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [surveyAverages, setSurveyAverages] = useState({ rpe: 0, legs: 0 });
   const [gymSurveyData, setGymSurveyData] = useState(null);
   const [gymSurveyAverages, setGymSurveyAverages] = useState({ rpe: 0 });
-
+  const [wellnessData, setWellnessData] = useState({
+    averages: { sleep: 0, fatigue: 0, soreness: 0 },
+    responses: {}
+  });
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
   const audioCtxRef = useRef(null);
   const triggerBeepRef = useRef(() => {});
   const [surveyStore, setSurveyStore] = useState(() => getSurveyStore());
   const [quickRosterName, setQuickRosterName] = useState("");
-  const [toastMessage, setToastMessage] = useState("");
+  // Remove duplicate toastMessage state here
   const [sessionSummaries, setSessionSummaries] = useState(() => {
     const parsed = safeParse("sessionSummaries", []);
     return Array.isArray(parsed) ? parsed : [];
   });
+
   const [summaryEdits, setSummaryEdits] = useState({});
   const [timers, setTimers] = useState([]);
 
@@ -635,7 +872,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         setRoster(players);
       } catch (error) {
         console.error('Failed to load roster:', error);
-        // Fall back to localStorage
+        // Fall back to localStorage,
         const localRoster = safeParse(ROSTER_KEY, []);
         setRoster(Array.isArray(localRoster) ? localRoster : []);
       } finally {
@@ -647,14 +884,12 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   useEffect(() => {
     if (!session?.id) return;
-    
     try {
       const surveyStore = localStorage.getItem(SURVEY_STORE_KEY);
       if (surveyStore) {
         const allSurveys = JSON.parse(surveyStore);
         const sessionSurveys = allSurveys[session.id] || {};
         setSurveyData(sessionSurveys);
-        
         // Add gym survey data loading
         const gymSurveys = allSurveys[`${session.id}_gym`] || {};
         setGymSurveyData(gymSurveys);
@@ -689,15 +924,13 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   useEffect(() => {
     if (!session?.id) return;
-    
     try {
       const practiceData = {
         metrics,
         drillRows,
         attendance,
-        surveyCompleted
+        surveyCompleted,
       };
-      
       localStorage.setItem(
         `${PRACTICE_DATA_KEY}${session.id}`, 
         JSON.stringify(practiceData)
@@ -754,7 +987,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   // Save to Firebase with debouncing
   useEffect(() => {
     if (!session?.id) return;
-    
     const savePracticeData = async () => {
       try {
         await practiceDataService.savePracticeData(session.id, {
@@ -785,10 +1017,30 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         }
       }
     };
-    
     const timer = setTimeout(savePracticeData, 1000);
     return () => clearTimeout(timer);
   }, [session?.id, metrics, drillRows, attendance, surveyData, surveyAverages, gymSurveyData, gymSurveyAverages]);
+
+  useEffect(() => {
+    const fetchWellnessData = async () => {
+      try {
+        const data = await wellnessService.getTodayWellness();
+        setWellnessData(data || {
+          averages: { sleep: 0, fatigue: 0, soreness: 0 },
+          responses: {} 
+        });
+      } catch (error) {
+        console.error('Failed to fetch wellness data:', error);
+        setWellnessData({
+          averages: { sleep: 0, fatigue: 0, soreness: 0 },
+          responses: {},
+          error: 'Failed to load wellness data'
+        });
+      }
+    };
+    
+    fetchWellnessData();
+  }, []);
 
   const updateMetrics = (type, field, value) => {
     setMetrics(prev => ({
@@ -920,7 +1172,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   useEffect(() => {
     if (!session || sessionSummaries.length === 0) return;
-    
     localStorage.setItem(
       `summaries_${session.id}`,
       JSON.stringify(sessionSummaries)
@@ -953,7 +1204,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     console.log('metrics:', metrics);
     console.log('metrics.planned.courtsUsed:', metrics.planned.courtsUsed);
     console.log('metrics.actual.courtsUsed:', metrics.actual.courtsUsed);
-    
+
     const { doc, fileName } = buildPracticePdf({
       session,
       summaries: sessionSummaries,
@@ -966,22 +1217,20 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       gymSurveyData,
       gymSurveyAverages
     });
-
     doc.save(fileName);
   };
 
   const navigate = useNavigate();
-
+    
   const handleOpenSurvey = () => {
     if (!session?.id) return;
-
     const practiceData = {
       metrics,
       drillRows,
       attendance,
       surveyCompleted: true
     };
-    
+
     try {
       localStorage.setItem(
         `${PRACTICE_DATA_KEY}${session.id}`, 
@@ -1000,7 +1249,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         `surveyPlayers_${session.id}`, 
         JSON.stringify(presentPlayers)
       );
-
       navigate(`/survey/${session.id}`);
     } catch (err) {
       console.error('Failed to prepare survey:', err);
@@ -1009,7 +1257,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   const handleOpenGymSurvey = () => {
     if (!session?.id) return;
-
     const practiceData = {
       metrics,
       drillRows,
@@ -1017,7 +1264,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       gymSurveyData,
       surveyCompleted: true
     };
-    
+
     try {
       localStorage.setItem(
         `${PRACTICE_DATA_KEY}${session.id}`, 
@@ -1036,7 +1283,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         `gymSurveyPlayers_${session.id}`, 
         JSON.stringify(presentPlayers)
       );
-
       navigate(`/gym-survey/${session.id}`);
     } catch (err) {
       console.error('Failed to prepare gym survey:', err);
@@ -1055,7 +1301,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   const renderSurveyStatus = () => {
     if (!surveyData) return null;
-
     const presentCount = Object.values(attendance)
       .filter(record => record.present).length;
     const responseCount = Object.keys(surveyData).length;
@@ -1076,6 +1321,53 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     );
   };
 
+  const handleExportPrePracticeReport = async () => {
+    try {
+      setToastMessage('Generating report...');
+      validatePrePracticeData({ session, metrics, roster });
+      
+      const freshWellnessData = await wellnessService.getTodayWellness();
+      
+      if (!checkWellnessData(freshWellnessData)) {
+        if (!window.confirm('No wellness survey responses available for today.\nWould you like to generate the report anyway?')) {
+          setToastMessage('');
+          return;
+        }
+      }
+      
+      const { doc, fileName } = buildPrePracticePdf({
+        session, metrics, drillRows, attendance,
+        wellnessData: freshWellnessData || { averages: { sleep: 0, fatigue: 0, soreness: 0 }, responses: {} },
+        roster
+      });
+      
+      doc.save(fileName);
+      setToastMessage('Report generated successfully ✓');
+      setTimeout(() => setToastMessage(''), 3000);
+    } catch (error) {
+      console.error('Failed to generate pre-practice report:', error);
+      setToastMessage(error.message || 'Failed to generate report.');
+      setTimeout(() => setToastMessage(''), 5000);
+    }
+  };
+
+  const formatSessionTime = (session) => {
+    const time = session?.startTime || session?.time;
+    if (!time) return "—";
+    if (typeof time === 'string' && time.includes(':')) return time;
+    try {
+      const date = new Date(time);
+      if (isNaN(date.getTime())) return time;
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return time;
+    }
+  };
+
   if (isLoadingRoster) {
     return <div>Loading roster...</div>;
   }
@@ -1092,6 +1384,22 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     );
   }
 
+  const PrePracticeButton = ({ onClick, isLoading }) => (
+    <button
+      onClick={onClick}
+      disabled={isLoading}
+      className={`
+        py-2 px-4 rounded font-medium
+        ${isLoading 
+          ? 'bg-gray-100 text-gray-500 cursor-wait'
+          : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+        }
+      `}
+    >
+      {isLoading ? 'Generating...' : 'Export Pre-Practice Report'}
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-[1400px] mx-auto">
@@ -1100,7 +1408,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             <h1 className="text-2xl font-bold mb-2">Practice Session</h1>
             <div className="text-gray-600">
               <p>Date: {session.date}</p>
-              <p>Time: {session.time}</p>
+              <p>Time: {formatSessionTime(session)}</p>
+              {session.type && <p>Type: {session.type}</p>}
             </div>
           </div>
           <Link 
@@ -1380,7 +1689,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                       </td>
                       <td className="text-center">
                         <button
-                          onClick={() => removeDrillRow(index)}
+                          onClick={(() => removeDrillRow(index))}
                           className="text-red-500 hover:text-red-700"
                         >
                           Remove
@@ -1400,13 +1709,25 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
             <div className="practice-controls">
               {renderSurveyStatus()}
-              <button
-                onClick={handleExportPDF}
-                className="py-2 px-4 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium"
-              >
-                Export Summary PDF
-              </button>
-
+              <div className="flex gap-4">
+                <button
+                  onClick={() => navigate('/wellness')}
+                  className="py-2 px-4 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded font-medium flex items-center gap-2"
+                >
+                  <span>💪</span>
+                  <span>Daily Wellness Check</span>
+                </button>
+                <PrePracticeButton 
+                  onClick={handleExportPrePracticeReport}
+                  isLoading={toastMessage === 'Generating report...'}
+                />
+                <button
+                  onClick={handleExportPDF}
+                  className="py-2 px-4 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium"
+                >
+                  Export Summary PDF
+                </button>
+              </div>
               <button
                 onClick={handleOpenSurvey}
                 className="py-3 px-6 bg-green-500 text-white hover:bg-green-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
@@ -1420,7 +1741,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                   <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
                 </svg>
               </button>
-
               <button
                 onClick={handleOpenGymSurvey}
                 className="py-3 px-6 bg-purple-500 text-white hover:bg-purple-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
@@ -1438,6 +1758,11 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           </div>
         </div>
       </div>
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 py-2 px-4 bg-gray-800 text-white rounded-lg shadow-lg">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }

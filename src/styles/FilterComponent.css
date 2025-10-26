@@ -1,0 +1,42 @@
+.filters {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.date-inputs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.schedule-input--segment {
+  width: 3rem;
+  text-align: center;
+}
+
+.schedule-input--segment[placeholder="YYYY"] {
+  width: 4rem;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  height: 100%;
+}
+
+.filter-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+}

@@ -7,6 +7,7 @@ import html2canvas from "html2canvas";
 import RosterManager from './RosterManager';
 import { scheduleService } from './services/scheduleService';
 import { practiceDataService } from './services/practiceDataService';
+import FilterComponent from './FilterComponent';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -27,7 +28,7 @@ const TYPE_COLORS = {
   DayOff: { color: "#10b981", background: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)" }, // Changed to green
   SplitPractice: { color: "#f97316", background: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.4)" },
   Meeting: { color: "#3b82f6", background: "rgba(59,130,246,0.12)", border: "rgba(59,130,246,0.4)" },
-  Recovery: { color: "#10b981", background: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)" },
+  Recovery: { color: "#f59e0b", background: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.4)" },
   Travel: { color: "#8b5cf6", background: "rgba(139,92,246,0.12)", border: "rgba(139,92,246,0.35)" },
   Default: { color: "#475569", background: "rgba(71,85,105,0.12)", border: "rgba(71,85,105,0.35)" },
 };
@@ -1428,7 +1429,6 @@ export default function SchedulePlanner() {
   const renderDayCell = dateObj => {
     const dateISO = toISODate(dateObj);
     const daySessions = sessionsByDate.get(dateISO) || [];
-    const outside = !isSameMonth(dateObj, viewMonth);
     const todayHighlight = isToday(dateObj);
     const isFirstOfMonth = dateObj.getUTCDate() === 1;
 
@@ -1439,7 +1439,6 @@ export default function SchedulePlanner() {
       // Render single Day Off cell
       const cellClassNames = [
         "cal-day",
-        outside ? "cal-day-out" : "",
         todayHighlight ? "cal-day-today" : "",
       ].filter(Boolean).join(" ");
 
@@ -1495,7 +1494,6 @@ export default function SchedulePlanner() {
 
     const cellClassNames = [
       "cal-day",
-      outside ? "cal-day-out" : "",
       todayHighlight ? "cal-day-today" : "",
     ]
       .filter(Boolean)
@@ -1686,7 +1684,7 @@ export default function SchedulePlanner() {
       DayOff: { fill: [16, 185, 129], alpha: 0.12 },
       SplitPractice: { fill: [249, 115, 22], alpha: 0.12 },
       Meeting: { fill: [59, 130, 246], alpha: 0.12 },
-      Recovery: { fill: [16, 185, 129], alpha: 0.12 },
+      Recovery: { fill: [245, 158, 11], alpha: 0.12 },
       Travel: { fill: [139, 92, 246], alpha: 0.12 },
       Default: { fill: [71, 85, 105], alpha: 0.12 }
     };
@@ -1909,127 +1907,14 @@ export default function SchedulePlanner() {
 
         <h2 className="schedule-title">📅 Team Schedule Sessions</h2>
 
-        <div className="filters" data-auto-root>
-          <div className="filter-field">
-            <div className="date-inputs">
-              <input
-                id="filter-from-day"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="DD"
-                maxLength={2}
-                value={fromParts.day}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-from-day"
-                data-advance-type="day"
-                data-advance-group="filter-from-date"
-                data-advance-order="0"
-                data-advance-next="filter-from-month"
-                aria-label="From day"
-              />
-              <input
-                id="filter-from-month"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="MM"
-                maxLength={2}
-                value={fromParts.month}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-from-month"
-                data-advance-type="month"
-                data-advance-group="filter-from-date"
-                data-advance-order="1"
-                data-advance-next="filter-from-year"
-                aria-label="From month"
-              />
-              <input
-                id="filter-from-year"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="YYYY"
-                maxLength={4}
-                value={fromParts.year}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-from-year"
-                data-advance-type="year"
-                data-advance-group="filter-from-date"
-                data-advance-order="2"
-                aria-label="From year"
-              />
-            </div>
-          </div>
-          <div className="filter-field">
-            <label className="filter-label" htmlFor="filter-to-day">
-              To
-            </label>
-            <div className="date-inputs">
-              <input
-                id="filter-to-day"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="DD"
-                maxLength={2}
-                value={toParts.day}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-to-day"
-                data-advance-type="day"
-                data-advance-group="filter-to-date"
-                data-advance-order="0"
-                data-advance-next="filter-to-month"
-                aria-label="To day"
-              />
-              <input
-                id="filter-to-month"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="MM"
-                maxLength={2}
-                value={toParts.month}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-to-month"
-                data-advance-type="month"
-                data-advance-group="filter-to-date"
-                data-advance-order="1"
-                data-advance-next="filter-to-year"
-                aria-label="To month"
-              />
-              <input
-                id="filter-to-year"
-                className="schedule-input schedule-input--segment"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="YYYY"
-                maxLength={4}
-                value={toParts.year}
-                onChange={noop}
-                autoComplete="off"
-                data-auto-field="filter-to-year"
-                data-advance-type="year"
-                data-advance-group="filter-to-date"
-                data-advance-order="2"
-                aria-label="To year"
-              />
-            </div>
-          </div>
-          <div className="filter-actions">
-            <button type="button" className="btn btn-primary" onClick={handleApplyFilters}>
-              Apply
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-              Clear
-            </button>
-          </div>
-        </div>
+        <FilterComponent 
+          fromParts={fromParts}
+          toParts={toParts}
+          updateFromPart={updateFromPart}
+          updateToPart={updateToPart}
+          handleApplyFilters={handleApplyFilters}
+          clearFilters={clearFilters}
+        />
 
         {appliedRangeText && <div className="filters-note">{appliedRangeText}</div>}
 
