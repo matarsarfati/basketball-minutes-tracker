@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { rosterService } from './services/rosterService';
 import { wellnessService } from './services/wellnessService';
 import './SurveyForm.css';
@@ -223,10 +223,6 @@ export default function WellnessForm() {
   return (
     <div className="survey-form">
       <div className="survey-wrap">
-        <Link to="/wellness" className="back-link">
-          ← Back to Dashboard
-        </Link>
-
         <div className="survey-card">
           <h1 className="survey-title">💪 Daily Wellness Check</h1>
           <p className="survey-date">{new Date().toLocaleDateString()}</p>
