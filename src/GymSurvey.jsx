@@ -108,6 +108,7 @@ export default function GymSurvey() {
       try {
         const parsedData = JSON.parse(localData);
         setPlayers(parsedData);
+        // Don't auto-select first player - keep selectedPlayer empty
       } catch (err) {
         console.error('Failed to parse local gym survey data:', err);
       }
@@ -252,11 +253,11 @@ export default function GymSurvey() {
         [selectedPlayer]: surveyData
       }));
 
-      // Show success and reset form
+      // Reset form - don't show success screen
       setRpe(null);
       setNotes('');
       setSelectedPlayer('');
-      setShowSuccess(true);
+      // Don't set showSuccess to true - stay on form
 
       console.log('✅ Gym survey saved successfully for:', selectedPlayer);
     } catch (err) {
@@ -331,12 +332,14 @@ export default function GymSurvey() {
                       setRpe(existing.rpe);
                       setNotes(existing.notes || '');
                     } else {
-                      setRpe(5);
+                      setRpe(null);
                       setNotes('');
                     }
                   }}
                   className="player-select"
+                  required
                 >
+                  <option value="">Choose player...</option>
                   {players.map(p => (
                     <option key={p.name} value={p.name}>
                       {p.name} {submitted[p.name] ? '✓' : ''}

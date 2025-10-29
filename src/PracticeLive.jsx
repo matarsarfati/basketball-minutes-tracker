@@ -946,20 +946,54 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       if (!session?.id) return;
       try {
         const practiceData = await practiceDataService.getPracticeData(session.id);
-        if (practiceData) {
-          setMetrics(practiceData.metrics || {
-            planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-            actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-          });
-          setDrillRows(practiceData.drillRows || []);
-          setAttendance(practiceData.attendance || {});
-          setSurveyData(practiceData.surveyData || null);
-          setSurveyAverages(practiceData.surveyAverages || { rpe: 0, legs: 0 });
-          
-          // Load gym survey data
-          setGymSurveyData(practiceData.gymSurveyData || null);
-          setGymSurveyAverages(practiceData.gymSurveyAverages || { rpe: 0 });
-        }
+if (practiceData) {
+  // Convert Firebase format (from SchedulePlanner) to component format
+  if (practiceData.totalDuration !== undefined) {
+    setMetrics({
+      planned: {
+        totalTime: practiceData.totalDuration || 0,
+        highIntensity: practiceData.plan?.reduce((sum, p) => 
+          sum + (p.isHighIntensity ? (p.duration || 0) : 0), 0) || 0,
+        courtsUsed: practiceData.courts || 0
+      },
+      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
+    });
+  } else if (practiceData.metrics) {
+    // Support old format for backward compatibility
+    setMetrics(practiceData.metrics);
+  } else {
+    // Default if no data
+    setMetrics({
+      planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
+      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
+    });
+  }
+  
+  // Convert plan (from SchedulePlanner) to drillRows
+  if (practiceData.plan) {
+    setDrillRows(practiceData.plan.map(p => ({
+      id: p.id,
+      name: p.name || '',
+      totalTime: p.duration || 0,
+      highIntensity: p.isHighIntensity ? (p.duration || 0) : 0,
+      courts: p.courts || 0,
+      notes: p.notes || ''
+    })));
+  } else if (practiceData.drillRows) {
+    // Support old format
+    setDrillRows(practiceData.drillRows);
+  } else {
+    setDrillRows([]);
+  }
+  
+  setAttendance(practiceData.attendance || {});
+  setSurveyData(practiceData.surveyData || null);
+  setSurveyAverages(practiceData.surveyAverages || { rpe: 0, legs: 0 });
+  
+  // Load gym survey data
+  setGymSurveyData(practiceData.gymSurveyData || null);
+  setGymSurveyAverages(practiceData.gymSurveyAverages || { rpe: 0 });
+}
       } catch (error) {
         console.error('Failed to load practice data:', error);
         // Fallback to localStorage if Firebase fails

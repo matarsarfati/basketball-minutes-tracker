@@ -152,6 +152,7 @@ export default function SurveyForm() {
       try {
         const parsedData = JSON.parse(localData);
         setPresentPlayers(parsedData);
+        // Don't auto-select first player - keep selectedPlayer empty
       } catch (err) {
         console.error('Failed to parse local survey data:', err);
       }
@@ -213,12 +214,13 @@ export default function SurveyForm() {
       localStorage.setItem(STORE_KEY, JSON.stringify(surveys));
       setStore(surveys);
 
-      // Reset form
+      // Reset form - don't show success screen
       setRpe(null);
       setLegs(null);
       setNotes('');
       setSelectedPlayer('');
-      setShowSuccess(true);
+      setError('');
+      // Don't set showSuccess to true - stay on form
 
     } catch (err) {
       console.error('Failed to save survey:', err);

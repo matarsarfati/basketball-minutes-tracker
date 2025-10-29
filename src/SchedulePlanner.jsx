@@ -1089,10 +1089,16 @@ export default function SchedulePlanner() {
       if (field === "totalMinutes" || field === "highIntensityMinutes") {
         parsedValue = value === "" ? "" : Math.max(0, Number(value));
       }
-      return {
+      
+      const updatedSession = {
         ...session,
         [field]: parsedValue,
       };
+      
+      // Save to Firebase
+      practiceDataService.syncScheduleWithPractice(sessionId, updatedSession).catch(console.error);
+      
+      return updatedSession;
     });
   };
 
@@ -1337,8 +1343,9 @@ export default function SchedulePlanner() {
     setTimeout(verifyTimeInputSetup, 1000);
   }, []);
 
-  const updatePart = (sessionId, partId, field, value) => {
-    mutateSession(sessionId, session => ({
+const updatePart = (sessionId, partId, field, value) => {
+  mutateSession(sessionId, session => {
+    const updatedSession = {
       ...session,
       parts: session.parts.map(part => {
         if (part.id !== partId) return part;
@@ -1350,8 +1357,14 @@ export default function SchedulePlanner() {
         }
         return { ...part, [field]: value };
       }),
-    }));
-  };
+    };
+    
+    // Save to Firebase
+    practiceDataService.syncScheduleWithPractice(sessionId, updatedSession).catch(console.error);
+    
+    return updatedSession;
+  });
+};
 
   const removePart = (sessionId, partId) => {
     mutateSession(sessionId, session => ({
