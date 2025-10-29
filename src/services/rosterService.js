@@ -27,6 +27,7 @@ class RosterService {
       const querySnapshot = await getDocs(collection(db, ROSTER_COLLECTION));
       const players = querySnapshot.docs.map(doc => ({
         ...doc.data(),
+        id: doc.id,
         firebaseId: doc.id
       }));
       console.log('Loaded players:', players.length);

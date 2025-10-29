@@ -1,11 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { practiceDataService } from './services/practiceDataService';
 import "./SurveyForm.css";
 
 const STORE_KEY = "practiceSurveysV1";
-const ROSTER_KEY = "teamRosterV1";
-const NEW_PLAYER_VALUE = "__new__";
 
 const RPE_SHORT = {
   1: "Very very light",
@@ -146,58 +144,46 @@ export default function SurveyForm() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`surveyPlayers_${sessionId}`);
-      if (stored) {
-        const players = JSON.parse(stored);
-        setPresentPlayers(players);
-        if (players.length > 0) {
-          setSelectedPlayer(players[0].name);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load present players:", err);
-    }
-  }, [sessionId]);
+    if (!sessionId) return;
 
-  // Load survey data from Firebase on mount
-  useEffect(() => {
-    const loadSurveyData = async () => {
+    // Load initial data from localStorage as fallback
+    const localData = localStorage.getItem(`surveyPlayers_${sessionId}`);
+    if (localData) {
       try {
-        const surveyData = await practiceDataService.getSurveyData(sessionId);
-        if (surveyData) {
-          setStore(prev => ({ ...prev, [sessionId]: surveyData }));
-        }
-      } catch (error) {
-        console.error('Failed to load survey data:', error);
-        // Fallback to localStorage
-        try {
-          const raw = localStorage.getItem(STORE_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            setStore(parsed ?? {});
-          }
-        } catch (err) {
-          console.error('Failed to load from localStorage:', err);
+        const parsedData = JSON.parse(localData);
+        setPresentPlayers(parsedData);
+      } catch (err) {
+        console.error('Failed to parse local survey data:', err);
+      }
+    }
+
+    // Set up real-time listener for Firebase updates
+    const unsubscribe = practiceDataService.subscribeToPracticeData(
+      sessionId,
+      (practiceData) => {
+        if (practiceData?.surveyData) {
+          // Update store with Firebase data
+          setStore(prev => {
+            const updatedStore = {
+              ...prev,
+              [sessionId]: practiceData.surveyData
+            };
+
+            // Backup to localStorage
+            try {
+              localStorage.setItem(STORE_KEY, JSON.stringify(updatedStore));
+            } catch (err) {
+              console.error('Failed to backup survey data to localStorage:', err);
+            }
+
+            return updatedStore;
+          });
         }
       }
-    };
-    if (sessionId) {
-      loadSurveyData();
-    }
-  }, [sessionId]);
-
-  // Update checkCompletion to just return status without navigation
-  const checkCompletion = useCallback(() => {
-    if (!presentPlayers.length) return false;
-
-    const responses = store[sessionId] || {};
-    const allResponded = presentPlayers.every(
-      player => responses[player.name]
     );
 
-    return allResponded;
-  }, [presentPlayers, store, sessionId]);
+    return () => unsubscribe();
+  }, [sessionId]);
 
   // Update handleSubmit to use Firebase
   const handleSubmit = async (e) => {

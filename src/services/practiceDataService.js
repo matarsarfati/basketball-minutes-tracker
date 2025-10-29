@@ -1,5 +1,36 @@
 import { db } from '../config/firebase';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+
+const subscribeToPracticeData = (sessionId, callback) => {
+  if (!sessionId) {
+    console.error('Session ID is required for subscription');
+    return () => {};
+  }
+
+  const docRef = doc(db, 'practices', sessionId);
+  
+  // Set up real-time listener
+  const unsubscribe = onSnapshot(
+    docRef,
+    (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const data = docSnapshot.data();
+        callback({
+          ...data,
+          id: docSnapshot.id
+        });
+      } else {
+        console.log('No practice data available for session:', sessionId);
+        callback(null);
+      }
+    },
+    (error) => {
+      console.error('Error listening to practice data:', error);
+    }
+  );
+
+  return unsubscribe;
+};
 
 export const practiceDataService = {
   async savePracticeData(sessionId, data) {
@@ -112,5 +143,65 @@ export const practiceDataService = {
       console.error('Error getting survey data:', error);
       throw error;
     }
-  }
+  },
+
+  async syncPracticeWithSchedule(sessionId, scheduleData) {
+    try {
+      const practiceData = await this.getPracticeData(sessionId);
+
+      if (practiceData) {
+        const updatedPlan = scheduleData.parts.map(part => ({
+          id: part.id,
+          name: part.label,
+          duration: part.minutes,
+          isHighIntensity: part.highIntensity,
+          notes: part.notes,
+          courts: scheduleData.courts,
+        }));
+
+        await this.savePracticeData(sessionId, {
+          ...practiceData,
+          plan: updatedPlan,
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing practice with schedule:', error);
+    }
+  },
+
+  async syncScheduleWithPractice(sessionId, scheduleData) {
+    const practiceData = {
+      totalDuration: scheduleData.totalMinutes || 0,
+      courts: scheduleData.courts || 0,
+      plan: scheduleData.parts?.map(part => ({
+        id: part.id,
+        name: part.label || '',
+        duration: part.minutes || 0,
+        isHighIntensity: !!part.highIntensity,
+        notes: part.notes || '',
+        courts: part.courts || scheduleData.courts || 0
+      })) || []
+    };
+
+    await this.savePracticeData(sessionId, practiceData);
+  },
+
+  formatPracticeForSchedule(practiceData) {
+    return {
+      totalMinutes: practiceData.totalDuration || 0,
+      highIntensityMinutes: practiceData.plan?.reduce((acc, part) => 
+        acc + (part.isHighIntensity ? (part.duration || 0) : 0), 0) || 0,
+      courts: practiceData.courts || 0,
+      parts: practiceData.plan?.map(part => ({
+        id: part.id,
+        label: part.name || '',
+        minutes: part.duration || 0,
+        highIntensity: !!part.isHighIntensity,
+        notes: part.notes || '',
+        courts: part.courts || practiceData.courts || 0
+      })) || []
+    };
+  },
+
+  subscribeToPracticeData,
 };

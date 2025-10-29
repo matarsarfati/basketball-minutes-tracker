@@ -51,28 +51,54 @@ export default function RosterManager() {
 
     try {
       const firebaseId = await rosterService.addPlayer(newPlayer);
-      setPlayers(prev => [...prev, { ...newPlayer, firebaseId }]);
+      setPlayers(prev => [...prev, { ...newPlayer, id: firebaseId, firebaseId }]);
       setNewPlayer({
         name: '',
         number: '',
         position: POSITIONS[0],
         active: true
       });
+      setShowForm(false);
     } catch (error) {
       console.error('Failed to add player to Firebase:', error);
       alert('Failed to save player. Please try again.');
     }
   };
 
-  const handleUpdatePlayer = async (playerId, updates) => {
+  const handleUpdatePlayer = async (e) => {
+    e.preventDefault();
+    if (!newPlayer.name || !newPlayer.number || !editingId) return;
+
     try {
-      const player = players.find(p => p.id === playerId);
+      const player = players.find(p => p.id === editingId);
       if (!player?.firebaseId) throw new Error('No Firebase ID found');
 
-      await rosterService.updatePlayer(player.firebaseId, updates);
+      await rosterService.updatePlayer(player.firebaseId, {
+        name: newPlayer.name,
+        number: newPlayer.number,
+        position: newPlayer.position,
+        active: newPlayer.active
+      });
+      
       setPlayers(prev => 
-        prev.map(p => p.id === playerId ? { ...p, ...updates } : p)
+        prev.map(p => p.id === editingId ? { 
+          ...p, 
+          name: newPlayer.name,
+          number: newPlayer.number,
+          position: newPlayer.position,
+          active: newPlayer.active
+        } : p)
       );
+      
+      // Reset form
+      setNewPlayer({
+        name: '',
+        number: '',
+        position: POSITIONS[0],
+        active: true
+      });
+      setEditingId(null);
+      setShowForm(false);
     } catch (error) {
       console.error('Failed to update player in Firebase:', error);
       alert('Failed to update player. Please try again.');
@@ -152,6 +178,24 @@ export default function RosterManager() {
               <button type="submit" className="roster-btn roster-btn-primary">
                 {editingId ? 'Save Changes' : 'Add Player'}
               </button>
+              {editingId && (
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setEditingId(null);
+                    setShowForm(false);
+                    setNewPlayer({
+                      name: '',
+                      number: '',
+                      position: POSITIONS[0],
+                      active: true
+                    });
+                  }}
+                  className="roster-btn roster-btn-secondary"
+                >
+                  Cancel
+                </button>
+              )}
               {error && <div className="roster-error">{error}</div>}
             </div>
           </div>

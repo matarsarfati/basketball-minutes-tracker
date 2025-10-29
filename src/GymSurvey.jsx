@@ -90,7 +90,7 @@ const QUESTION_LABELS = {
   rpe: "Session Intensity (RPE) — 1 to 10"
 };
 
-function GymSurvey() {
+export default function GymSurvey() {
   const { sessionId } = useParams();
   const [players, setPlayers] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
@@ -100,24 +100,49 @@ function GymSurvey() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    const loadData = async () => {
+    if (!sessionId) return;
+
+    // Load initial data from localStorage as fallback
+    const localData = localStorage.getItem(`gymSurveyPlayers_${sessionId}`);
+    if (localData) {
       try {
-        const players = JSON.parse(localStorage.getItem(`gymSurveyPlayers_${sessionId}`) || '[]');
-        setPlayers(players);
-
-        const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
-        const existing = store[`${sessionId}_gym`] || {};
-        setSubmitted(existing);
-
-        if (players.length > 0) {
-          const firstPending = players.find(p => !existing[p.name]);
-          setSelectedPlayer(firstPending?.name || players[0].name);
-        }
+        const parsedData = JSON.parse(localData);
+        setPlayers(parsedData);
       } catch (err) {
-        console.error('Failed to load data:', err);
+        console.error('Failed to parse local gym survey data:', err);
       }
-    };
-    loadData();
+    }
+
+    // Load initial data from Firebase
+    practiceDataService.getPracticeData(sessionId)
+      .then(practiceData => {
+        if (practiceData?.gymSurveyData) {
+          setSubmitted(practiceData.gymSurveyData);
+        }
+      })
+      .catch(console.error);
+
+    // Set up real-time listener
+    const unsubscribe = practiceDataService.subscribeToPracticeData(
+      sessionId,
+      (practiceData) => {
+        if (practiceData?.gymSurveyData) {
+          setSubmitted(practiceData.gymSurveyData);
+
+          // Backup to localStorage
+          try {
+            localStorage.setItem(
+              `gymSurvey_${sessionId}`,
+              JSON.stringify(practiceData.gymSurveyData)
+            );
+          } catch (err) {
+            console.error('Failed to backup gym survey data:', err);
+          }
+        }
+      }
+    );
+
+    return () => unsubscribe();
   }, [sessionId]);
 
   const renderControl = (type, currentValue, setter) => {
@@ -199,32 +224,32 @@ function GymSurvey() {
     );
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     if (!selectedPlayer || rpe === null) return;
 
-    const response = { 
-      rpe, 
+    const surveyData = {
+      rpe: Number(rpe),
       notes: notes.trim(),
-      savedAt: new Date().toISOString() 
+      savedAt: new Date().toISOString()
     };
 
     try {
       // Save to Firebase FIRST
-      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, response);
+      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, surveyData);
       
       // Then save to localStorage as backup
       const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
       store[`${sessionId}_gym`] = {
         ...(store[`${sessionId}_gym`] || {}),
-        [selectedPlayer]: response
+        [selectedPlayer]: surveyData
       };
       localStorage.setItem(SURVEY_STORE_KEY, JSON.stringify(store));
 
       // Update local state
       setSubmitted(prev => ({
         ...prev,
-        [selectedPlayer]: response
+        [selectedPlayer]: surveyData
       }));
 
       // Show success and reset form
@@ -351,5 +376,3 @@ function GymSurvey() {
     </div>
   );
 }
-
-export default GymSurvey;
