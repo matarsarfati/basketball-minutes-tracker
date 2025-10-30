@@ -774,29 +774,22 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [toastMessage, setToastMessage] = useState('');
 
   // 4. Initialize session-dependent state
-  const [metrics, setMetrics] = useState(() => {
-    if (!session?.id) return {
-      planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-    };
-    
-    try {
-      const stored = localStorage.getItem(`${PRACTICE_DATA_KEY}${session.id}`);
-      if (stored) {
-        const data = JSON.parse(stored);
-        return data.metrics || {
-          planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-          actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-        };
-      }
-    } catch (err) {
-      console.error('Failed to load metrics:', err);
+  const [metrics, setMetrics] = useState(() => ({
+    planned: {
+      totalTime: 0,
+      highIntensity: 0,
+      courtsUsed: 0,
+      rpeCourt: 0,
+      rpeGym: 0
+    },
+    actual: {
+      totalTime: 0,
+      highIntensity: 0,
+      courtsUsed: 0,
+      rpeCourt: 0,
+      rpeGym: 0
     }
-    return {
-      planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-    };
-  });
+  }));
 
   const [drillRows, setDrillRows] = useState(() => {
     if (!session?.id) return [];
@@ -946,73 +939,26 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       if (!session?.id) return;
       try {
         const practiceData = await practiceDataService.getPracticeData(session.id);
-if (practiceData) {
-  // Convert Firebase format (from SchedulePlanner) to component format
-  if (practiceData.totalDuration !== undefined) {
-    setMetrics({
-      planned: {
-        totalTime: practiceData.totalDuration || 0,
-        highIntensity: practiceData.plan?.reduce((sum, p) => 
-          sum + (p.isHighIntensity ? (p.duration || 0) : 0), 0) || 0,
-        courtsUsed: practiceData.courts || 0
-      },
-      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-    });
-  } else if (practiceData.metrics) {
-    // Support old format for backward compatibility
-    setMetrics(practiceData.metrics);
-  } else {
-    // Default if no data
-    setMetrics({
-      planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-      actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-    });
-  }
-  
-  // Convert plan (from SchedulePlanner) to drillRows
-  if (practiceData.plan) {
-    setDrillRows(practiceData.plan.map(p => ({
-      id: p.id,
-      name: p.name || '',
-      totalTime: p.duration || 0,
-      highIntensity: p.isHighIntensity ? (p.duration || 0) : 0,
-      courts: p.courts || 0,
-      notes: p.notes || ''
-    })));
-  } else if (practiceData.drillRows) {
-    // Support old format
-    setDrillRows(practiceData.drillRows);
-  } else {
-    setDrillRows([]);
-  }
-  
-  setAttendance(practiceData.attendance || {});
-  setSurveyData(practiceData.surveyData || null);
-  setSurveyAverages(practiceData.surveyAverages || { rpe: 0, legs: 0 });
-  
-  // Load gym survey data
-  setGymSurveyData(practiceData.gymSurveyData || null);
-  setGymSurveyAverages(practiceData.gymSurveyAverages || { rpe: 0 });
-}
+        if (practiceData) {
+          setMetrics({
+            planned: {
+              totalTime: practiceData.totalMinutes || 0,
+              highIntensity: practiceData.highIntensityMinutes || 0,
+              courtsUsed: practiceData.courts || 0,
+              rpeCourt: practiceData.rpeCourtPlanned || practiceData.metrics?.planned?.rpeCourt || 0,
+              rpeGym: practiceData.rpeGymPlanned || practiceData.metrics?.planned?.rpeGym || 0
+            },
+            actual: {
+              totalTime: practiceData.metrics?.actual?.totalTime || 0,
+              highIntensity: practiceData.metrics?.actual?.highIntensity || 0,
+              courtsUsed: practiceData.metrics?.actual?.courtsUsed || 0,
+              rpeCourt: practiceData.metrics?.actual?.rpeCourt || 0,
+              rpeGym: practiceData.metrics?.actual?.rpeGym || 0
+            }
+          });
+        }
       } catch (error) {
         console.error('Failed to load practice data:', error);
-        // Fallback to localStorage if Firebase fails
-        const stored = localStorage.getItem(`${PRACTICE_DATA_KEY}${session.id}`);
-        if (stored) {
-          const data = JSON.parse(stored);
-          setMetrics(data.metrics || {
-            planned: { totalTime: 0, highIntensity: 0, courtsUsed: 0 },
-            actual: { totalTime: 0, highIntensity: 0, courtsUsed: 0 }
-          });
-          setDrillRows(data.drillRows || []);
-          setAttendance(data.attendance || {});
-          setSurveyData(data.surveyData || null);
-          setSurveyAverages(data.surveyAverages || { rpe: 0, legs: 0 });
-          
-          // Load gym survey data from localStorage fallback
-          setGymSurveyData(data.gymSurveyData || null);
-          setGymSurveyAverages(data.gymSurveyAverages || { rpe: 0 });
-        }
       }
     };
     loadPracticeData();
@@ -1600,9 +1546,11 @@ if (practiceData) {
                 <thead>
                   <tr>
                     <th style={{ width: '15%' }}>Metric</th>
-                    <th style={{ width: '28%' }}>Total Time</th>
-                    <th style={{ width: '28%' }}>High Intensity</th>
-                    <th style={{ width: '29%' }}>Courts Used</th>
+                    <th style={{ width: '20%' }}>Total Time</th>
+                    <th style={{ width: '20%' }}>High Intensity</th>
+                    <th style={{ width: '15%' }}>Courts Used</th>
+                    <th style={{ width: '15%' }}>Court RPE</th>
+                    <th style={{ width: '15%' }}>Gym RPE</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1635,6 +1583,28 @@ if (practiceData) {
                         min="0"
                       />
                     </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.planned.rpeCourt}
+                        onChange={e => updateMetrics('planned', 'rpeCourt', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                        max="10"
+                        step="0.5"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.planned.rpeGym}
+                        onChange={e => updateMetrics('planned', 'rpeGym', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                        max="10"
+                        step="0.5"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td className="font-medium">Actual</td>
@@ -1663,6 +1633,28 @@ if (practiceData) {
                         onChange={e => updateMetrics('actual', 'courtsUsed', e.target.value)}
                         className="table-input" 
                         min="0"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.actual.rpeCourt}
+                        onChange={e => updateMetrics('actual', 'rpeCourt', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                        max="10"
+                        step="0.5"
+                      />
+                    </td>
+                    <td>
+                      <input 
+                        type="number"
+                        value={metrics.actual.rpeGym}
+                        onChange={e => updateMetrics('actual', 'rpeGym', e.target.value)}
+                        className="table-input" 
+                        min="0"
+                        max="10"
+                        step="0.5"
                       />
                     </td>
                   </tr>

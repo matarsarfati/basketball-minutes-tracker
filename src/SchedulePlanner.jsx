@@ -603,6 +603,8 @@ const emptySession = (date = "", slot = "AM") => ({
   courts: "",
   totalMinutes: 0,
   highIntensityMinutes: 0,
+  rpeCourtPlanned: 0,  // Added
+  rpeGymPlanned: 0,    // Added
   parts: [],
 });
 
@@ -1088,6 +1090,10 @@ export default function SchedulePlanner() {
       }
       if (field === "totalMinutes" || field === "highIntensityMinutes") {
         parsedValue = value === "" ? "" : Math.max(0, Number(value));
+      }
+      // Add RPE field handling
+      if (field === "rpeCourtPlanned" || field === "rpeGymPlanned") {
+        parsedValue = value === "" ? 0 : Math.min(10, Math.max(0, Number(value)));
       }
       
       const updatedSession = {
@@ -2402,6 +2408,45 @@ const updatePart = (sessionId, partId, field, value) => {
                   }
                   className="schedule-input"
                 />
+              </div>
+              {/* Add RPE Court field */}
+              <div className="drawer-field">
+                <label className="schedule-section-title" htmlFor="edit-rpe-court">
+                  RPE Court (Planned)
+                </label>
+                <input
+                  id="edit-rpe-court"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={editorSession.rpeCourtPlanned}
+                  onChange={event => updateSessionField(editorSession.id, "rpeCourtPlanned", event.target.value)}
+                  className="schedule-input rpe-input"
+                />
+                <div className="text-sm text-gray-500 mt-1">
+                  Expected court session intensity (0-10)
+                </div>
+              </div>
+
+              {/* Add RPE Gym field */}
+              <div className="drawer-field">
+                <label className="schedule-section-title" htmlFor="edit-rpe-gym">
+                  RPE Gym (Planned)
+                </label>
+                <input
+                  id="edit-rpe-gym"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={editorSession.rpeGymPlanned}
+                  onChange={event => updateSessionField(editorSession.id, "rpeGymPlanned", event.target.value)}
+                  className="schedule-input rpe-input"
+                />
+                <div className="text-sm text-gray-500 mt-1">
+                  Expected gym session intensity (0-10)
+                </div>
               </div>
               <div className="drawer-field drawer-field--full">
                 <label className="schedule-section-title" htmlFor="edit-notes">

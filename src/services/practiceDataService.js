@@ -35,13 +35,29 @@ const subscribeToPracticeData = (sessionId, callback) => {
 export const practiceDataService = {
   async savePracticeData(sessionId, data) {
     try {
-      const practiceRef = doc(db, 'practices', sessionId);
-      await setDoc(practiceRef, {
+      const normalized = {
         ...data,
-        lastUpdated: new Date().toISOString()
-      }, { merge: true });
+        metrics: {
+          planned: {
+            ...data.metrics?.planned,
+            rpeCourt: data.metrics?.planned?.rpeCourt || 0,
+            rpeGym: data.metrics?.planned?.rpeGym || 0
+          },
+          actual: {
+            ...data.metrics?.actual,
+            rpeCourt: data.metrics?.actual?.rpeCourt || 0,
+            rpeGym: data.metrics?.actual?.rpeGym || 0
+          }
+        },
+        rpeCourtPlanned: data.rpeCourtPlanned || data.metrics?.planned?.rpeCourt || 0,
+        rpeGymPlanned: data.rpeGymPlanned || data.metrics?.planned?.rpeGym || 0,
+        lastUpdated: Date.now()
+      };
+
+      await db.collection('practices').doc(sessionId).set(normalized, { merge: true });
+      return normalized;
     } catch (error) {
-      console.error('Error saving practice data:', error);
+      console.error('Failed to save practice data:', error);
       throw error;
     }
   },
@@ -169,21 +185,45 @@ export const practiceDataService = {
     }
   },
 
-  async syncScheduleWithPractice(sessionId, scheduleData) {
-    const practiceData = {
-      totalDuration: scheduleData.totalMinutes || 0,
+  async syncScheduleWithPractice(scheduleData) {
+    const firebaseData = {
+      totalMinutes: scheduleData.totalMinutes || 0,
+      highIntensityMinutes: scheduleData.highIntensityMinutes || 0,
       courts: scheduleData.courts || 0,
+      rpeCourtPlanned: scheduleData.rpeCourtPlanned || 0,
+      rpeGymPlanned: scheduleData.rpeGymPlanned || 0,
       plan: scheduleData.parts?.map(part => ({
-        id: part.id,
         name: part.label || '',
         duration: part.minutes || 0,
-        isHighIntensity: !!part.highIntensity,
-        notes: part.notes || '',
-        courts: part.courts || scheduleData.courts || 0
-      })) || []
+        isHighIntensity: Boolean(part.highIntensity),
+        courts: part.courts || 0
+      })) || [],
+      metrics: {
+        planned: {
+          totalTime: scheduleData.totalMinutes || 0,
+          highIntensity: scheduleData.highIntensityMinutes || 0,
+          courtsUsed: scheduleData.courts || 0,
+          rpeCourt: scheduleData.rpeCourtPlanned || 0,
+          rpeGym: scheduleData.rpeGymPlanned || 0
+        },
+        actual: {
+          totalTime: 0,
+          highIntensity: 0,
+          courtsUsed: 0,
+          rpeCourt: 0,
+          rpeGym: 0
+        }
+      },
+      lastUpdated: Date.now()
     };
 
-    await this.savePracticeData(sessionId, practiceData);
+    try {
+      await db.collection('practices').doc(scheduleData.id).set(firebaseData, { merge: true });
+      return firebaseData;
+    } catch (error) {
+      console.error('Failed to sync practice data:', error);
+      throw error;
+    }
   },
 
   formatPracticeForSchedule(practiceData) {
