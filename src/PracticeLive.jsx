@@ -791,6 +791,33 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }
   }));
 
+  useEffect(() => {
+    const loadPracticeData = async () => {
+      if (!session?.id) return;
+
+      try {
+        const data = await practiceDataService.getPracticeData(session.id);
+
+        if (data?.metrics) {
+          setMetrics(prevMetrics => ({
+            planned: {
+              ...prevMetrics.planned,
+              ...data.metrics.planned
+            },
+            actual: {
+              ...prevMetrics.actual,
+              ...data.metrics.actual
+            }
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load practice data:', error);
+      }
+    };
+
+    loadPracticeData();
+  }, [session?.id]);
+
   const [drillRows, setDrillRows] = useState(() => {
     if (!session?.id) return [];
     try {

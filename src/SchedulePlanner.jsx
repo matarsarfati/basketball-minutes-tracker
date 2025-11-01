@@ -256,19 +256,39 @@ const getCurrentMonthRange = () => {
 };
 
 const getMonthDays = activeDate => {
+  // Find the first day of the month
   const firstOfMonth = startOfMonthUTC(activeDate);
-  const startDayOffset = firstOfMonth.getUTCDay();
-  const firstVisibleDate = createUTCDate(
+  
+  // Find the day of week for the first of the month (0-6)
+  const firstDayOfWeek = firstOfMonth.getUTCDay();
+  
+  // Get the middle day of the month to help center the view
+  const middleOfMonth = new Date(Date.UTC(
     firstOfMonth.getUTCFullYear(),
     firstOfMonth.getUTCMonth(),
-    1 - startDayOffset
+    Math.ceil(firstOfMonth.getUTCDate() / 2)
+  ));
+  
+  // Calculate how many days to show before the middle week
+  // We want approximately 2.5 weeks before (17-18 days)
+  const daysBeforeMiddle = 17;
+  
+  // Calculate the start date by subtracting days from the middle
+  const firstVisibleDate = createUTCDate(
+    middleOfMonth.getUTCFullYear(),
+    middleOfMonth.getUTCMonth(),
+    middleOfMonth.getUTCDate() - daysBeforeMiddle
   );
+  
   const startISO = toISODate(firstVisibleDate);
   const days = [];
+  
+  // Still generate 42 days (6 weeks) but now centered around the middle of the month
   for (let index = 0; index < 42; index += 1) {
     const iso = index === 0 ? startISO : addDaysToISO(startISO, index);
     days.push(parseISODateToUTC(iso));
   }
+  
   return days;
 };
 
@@ -558,10 +578,20 @@ const getSessionMetrics = session => {
     session.courts !== "" && session.courts !== null && session.courts !== undefined
       ? Number(session.courts)
       : 0;
+  const rpeCourtPlanned = 
+    session.rpeCourtPlanned !== "" && session.rpeCourtPlanned !== null 
+      ? Number(session.rpeCourtPlanned)
+      : 0;
+  const rpeGymPlanned = 
+    session.rpeGymPlanned !== "" && session.rpeGymPlanned !== null 
+      ? Number(session.rpeGymPlanned)
+      : 0;
   return {
     totalMinutes,
     highMinutes,
     courts,
+    rpeCourtPlanned,
+    rpeGymPlanned
   };
 };
 
@@ -648,6 +678,7 @@ export default function SchedulePlanner() {
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false); // Add this line
+  const [isSyncing, setIsSyncing] = useState(false);
   const currentMonth = useMemo(() => getCurrentMonthRange(), []);
   const [fromDate, setFromDate] = useState(currentMonth.startISO);
   const [toDate, setToDate] = useState(currentMonth.endISO);
@@ -799,9 +830,22 @@ export default function SchedulePlanner() {
 
   const monthDays = useMemo(() => getMonthDays(viewMonth), [viewMonth]);
 
+  // New useMemo for unfiltered sessions (for calendar display)
+  const calendarSessions = useMemo(() => {
+    const slotOrder = new Map(SLOT_OPTIONS.map((slot, index) => [slot, index]));
+    return [...sessions].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      const slotCompare = (slotOrder.get(a.slot) ?? 0) - (slotOrder.get(b.slot) ?? 0);
+      if (slotCompare !== 0) return slotCompare;
+      return (a.startTime || "").localeCompare(b.startTime || "");
+    });
+  }, [sessions]);
+
+  // Keep existing visibleSessions for filtered data (exports/reports)
   const visibleSessions = useMemo(() => {
     const slotOrder = new Map(SLOT_OPTIONS.map((slot, index) => [slot, index]));
-    const sorted = [...sessions]
+    return [...sessions]
       .filter(session => {
         if (!session.date) return false;
         const fromPass = !fromDate || session.date >= fromDate;
@@ -815,19 +859,19 @@ export default function SchedulePlanner() {
         if (slotCompare !== 0) return slotCompare;
         return (a.startTime || "").localeCompare(b.startTime || "");
       });
-    return sorted;
   }, [sessions, fromDate, toDate]);
 
+  // Update sessionsByDate to use calendarSessions instead of visibleSessions
   const sessionsByDate = useMemo(() => {
     const map = new Map();
-    visibleSessions.forEach(session => {
+    calendarSessions.forEach(session => {
       if (!map.has(session.date)) {
         map.set(session.date, []);
       }
       map.get(session.date).push(session);
     });
     return map;
-  }, [visibleSessions]);
+  }, [calendarSessions]); // Changed dependency from visibleSessions to calendarSessions
 
   const openEditor = sessionId => {
     setSelectedSessionId(null);
@@ -1071,39 +1115,31 @@ export default function SchedulePlanner() {
 
   const updateSessionField = (sessionId, field, value) => {
     mutateSession(sessionId, session => {
-      if (field === "startTime") {
-        if (value === "") {
-          setEditorTimeParts(splitTimeToParts(""));
-          return { ...session, startTime: "" };
-        }
-        const normalized = normalizeTimeInput(value);
-        if (normalized && isValidTimeString(normalized)) {
-          setEditorTimeParts(splitTimeToParts(normalized));
-          return { ...session, startTime: normalized };
-        }
-        return session;
+      let parsedValue = value;
+
+      if (['courts', 'totalMinutes', 'highIntensityMinutes'].includes(field)) {
+        parsedValue = value === '' ? 0 : Math.max(0, Number(value));
       }
 
-      let parsedValue = value;
-      if (field === "courts") {
-        parsedValue = value === "" ? "" : Math.max(0, Number(value));
+      if (field === 'rpeCourtPlanned' || field === 'rpeGymPlanned') {
+        parsedValue = value === '' ? 0 : Math.min(10, Math.max(0, Number(value)));
       }
-      if (field === "totalMinutes" || field === "highIntensityMinutes") {
-        parsedValue = value === "" ? "" : Math.max(0, Number(value));
-      }
-      // Add RPE field handling
-      if (field === "rpeCourtPlanned" || field === "rpeGymPlanned") {
-        parsedValue = value === "" ? 0 : Math.min(10, Math.max(0, Number(value)));
-      }
-      
+
+      console.log('Updating session field:', {
+        field,
+        rawValue: value,
+        parsedValue,
+        sessionId
+      });
+
       const updatedSession = {
         ...session,
         [field]: parsedValue,
       };
-      
-      // Save to Firebase
-      practiceDataService.syncScheduleWithPractice(sessionId, updatedSession).catch(console.error);
-      
+
+      practiceDataService.syncSessionToPracticeLive(sessionId, updatedSession)
+        .catch(error => console.error('Failed to sync update:', error));
+
       return updatedSession;
     });
   };
@@ -1389,7 +1425,7 @@ const updatePart = (sessionId, partId, field, value) => {
   };
 
   const renderSessionTile = (session, dateISO) => {
-    const { totalMinutes, highMinutes, courts } = getSessionMetrics(session);
+    const { totalMinutes, highMinutes, courts, rpeCourtPlanned, rpeGymPlanned } = getSessionMetrics(session);
     const showStats = session.type !== "DayOff" && session.type !== "Game";
     const showTime = session.type !== "DayOff";
     const timeText = formatTime(session.startTime);
@@ -1439,6 +1475,12 @@ const updatePart = (sessionId, partId, field, value) => {
             <div>Total: {totalMinutes}m</div>
             <div>High: {highMinutes}m</div>
             <div>Courts: {courts}</div>
+            {rpeCourtPlanned > 0 && (
+              <div>Court RPE: {rpeCourtPlanned}</div>
+            )}
+            {rpeGymPlanned > 0 && (
+              <div>Gym RPE: {rpeGymPlanned}</div>
+            )}
           </div>
         )}
       </button>
@@ -1787,6 +1829,10 @@ const updatePart = (sessionId, partId, field, value) => {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
+      // Use visibleSessions here instead of getting from sessionsByDate
+      // This ensures exports respect the date range filter
+      const sessionsToExport = visibleSessions;
+      
       const doc = new jsPDF({ orientation: "landscape", format: "a4" });
       
       // Page dimensions and margins
@@ -1884,6 +1930,30 @@ const updatePart = (sessionId, partId, field, value) => {
       console.error('PDF export failed:', error);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleSyncToPracticeLive = async (session) => {
+    setIsSyncing(true);
+    try {
+      const metricsToSync = {
+        ...session,
+        totalMinutes: Number(session.totalMinutes) || 0,
+        highIntensityMinutes: Number(session.highIntensityMinutes) || 0,
+        courts: Number(session.courts) || 0,
+        rpeCourtPlanned: Number(session.rpeCourtPlanned) || 0,
+        rpeGymPlanned: Number(session.rpeGymPlanned) || 0
+      };
+
+      console.log('Syncing metrics:', metricsToSync);
+
+      await practiceDataService.syncSessionToPracticeLive(session.id, metricsToSync);
+      alert('Successfully synced metrics to PracticeLive!');
+    } catch (error) {
+      console.error('Sync failed:', error);
+      alert(`Failed to sync metrics: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -2176,6 +2246,54 @@ const updatePart = (sessionId, partId, field, value) => {
                   min="0"
                 />
               </div>
+              <div className="details-stat">
+                <span className="details-stat__label">Court RPE</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={selectedSession.rpeCourtPlanned || 0}
+                  onChange={e => {
+                    mutateSession(selectedSession.id, session => ({
+                      ...session,
+                      rpeCourtPlanned: Number(e.target.value) || 0
+                    }));
+                  }}
+                  className="details-stat__input"
+                />
+                <span className="details-stat__unit">/10</span>
+              </div>
+
+              <div className="details-stat">
+                <span className="details-stat__label">Gym RPE</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={selectedSession.rpeGymPlanned || 0}
+                  onChange={e => {
+                    mutateSession(selectedSession.id, session => ({
+                      ...session,
+                      rpeGymPlanned: Number(e.target.value) || 0
+                    }));
+                  }}
+                  className="details-stat__input"
+                />
+                <span className="details-stat__unit">/10</span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button 
+                onClick={() => handleSyncToPracticeLive(selectedSession)}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                <span>🔄</span>
+                <span>{isSyncing ? 'Syncing...' : 'Sync to PracticeLive'}</span>
+              </button>
             </div>
 
             <div className="details-notes-edit" style={{ marginTop: '20px' }}>

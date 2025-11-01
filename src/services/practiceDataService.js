@@ -1,14 +1,12 @@
 import { db } from '../config/firebase';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection } from 'firebase/firestore';
 
 const subscribeToPracticeData = (sessionId, callback) => {
   if (!sessionId) {
     console.error('Session ID is required for subscription');
     return () => {};
   }
-
   const docRef = doc(db, 'practices', sessionId);
-  
   // Set up real-time listener
   const unsubscribe = onSnapshot(
     docRef,
@@ -28,7 +26,6 @@ const subscribeToPracticeData = (sessionId, callback) => {
       console.error('Error listening to practice data:', error);
     }
   );
-
   return unsubscribe;
 };
 
@@ -53,7 +50,6 @@ export const practiceDataService = {
         rpeGymPlanned: data.rpeGymPlanned || data.metrics?.planned?.rpeGym || 0,
         lastUpdated: Date.now()
       };
-
       await db.collection('practices').doc(sessionId).set(normalized, { merge: true });
       return normalized;
     } catch (error) {
@@ -61,12 +57,10 @@ export const practiceDataService = {
       throw error;
     }
   },
-
   async getPracticeData(sessionId) {
     try {
       const practiceRef = doc(db, 'practices', sessionId);
       const practiceDoc = await getDoc(practiceRef);
-      
       if (practiceDoc.exists()) {
         return practiceDoc.data();
       }
@@ -76,25 +70,20 @@ export const practiceDataService = {
       throw error;
     }
   },
-
   async updateSurveyResponse(sessionId, playerName, response) {
     try {
       const practiceRef = doc(db, 'practices', sessionId);
       const practiceDoc = await getDoc(practiceRef);
-      
       if (practiceDoc.exists()) {
         const existingData = practiceDoc.data();
         const surveyData = existingData.surveyData || {};
-        
         surveyData[playerName] = response;
-        
         // Calculate new averages
         const responses = Object.values(surveyData);
         const surveyAverages = responses.length > 0 ? {
           rpe: Number((responses.reduce((sum, r) => sum + (Number(r.rpe) || 0), 0) / responses.length).toFixed(1)),
           legs: Number((responses.reduce((sum, r) => sum + (Number(r.legs) || 0), 0) / responses.length).toFixed(1))
         } : { rpe: 0, legs: 0 };
-        
         await updateDoc(practiceRef, {
           surveyData,
           surveyAverages,
@@ -103,7 +92,7 @@ export const practiceDataService = {
       } else {
         await setDoc(practiceRef, {
           surveyData: { [playerName]: response },
-          surveyAverages: { 
+          surveyAverages: {
             rpe: Number(response.rpe) || 0,
             legs: Number(response.legs) || 0
           },
@@ -115,24 +104,19 @@ export const practiceDataService = {
       throw error;
     }
   },
-
   async updateGymSurveyResponse(sessionId, playerName, response) {
     try {
       const practiceRef = doc(db, 'practices', sessionId);
       const practiceDoc = await getDoc(practiceRef);
-      
       if (practiceDoc.exists()) {
         const existingData = practiceDoc.data();
         const gymSurveyData = existingData.gymSurveyData || {};
-        
         gymSurveyData[playerName] = response;
-        
         // Calculate new averages
         const responses = Object.values(gymSurveyData);
         const gymSurveyAverages = responses.length > 0 ? {
           rpe: Number((responses.reduce((sum, r) => sum + (Number(r.rpe) || 0), 0) / responses.length).toFixed(1))
         } : { rpe: 0 };
-        
         await updateDoc(practiceRef, {
           gymSurveyData,
           gymSurveyAverages,
@@ -150,7 +134,6 @@ export const practiceDataService = {
       throw error;
     }
   },
-
   async getSurveyData(sessionId) {
     try {
       const practiceData = await this.getPracticeData(sessionId);
@@ -160,11 +143,9 @@ export const practiceDataService = {
       throw error;
     }
   },
-
   async syncPracticeWithSchedule(sessionId, scheduleData) {
     try {
       const practiceData = await this.getPracticeData(sessionId);
-
       if (practiceData) {
         const updatedPlan = scheduleData.parts.map(part => ({
           id: part.id,
@@ -174,7 +155,6 @@ export const practiceDataService = {
           notes: part.notes,
           courts: scheduleData.courts,
         }));
-
         await this.savePracticeData(sessionId, {
           ...practiceData,
           plan: updatedPlan,
@@ -184,7 +164,6 @@ export const practiceDataService = {
       console.error('Error syncing practice with schedule:', error);
     }
   },
-
   async syncScheduleWithPractice(scheduleData) {
     const firebaseData = {
       totalMinutes: scheduleData.totalMinutes || 0,
@@ -216,12 +195,46 @@ export const practiceDataService = {
       },
       lastUpdated: Date.now()
     };
-
     try {
       await db.collection('practices').doc(scheduleData.id).set(firebaseData, { merge: true });
       return firebaseData;
     } catch (error) {
       console.error('Failed to sync practice data:', error);
+      throw error;
+    }
+  },
+  async syncSessionToPracticeLive(sessionId, sessionData) {
+    try {
+      const practiceRef = doc(db, 'practices', sessionId);
+      
+      const practiceMetrics = {
+        // Add root level fields
+        totalMinutes: Number(sessionData.totalMinutes) || 0,
+        highIntensityMinutes: Number(sessionData.highIntensityMinutes) || 0, 
+        courts: Number(sessionData.courts) || 0,
+        metrics: {
+          planned: {
+            totalTime: Number(sessionData.totalMinutes) || 0,
+            highIntensity: Number(sessionData.highIntensityMinutes) || 0,
+            courtsUsed: Number(sessionData.courts) || 0,
+            rpeCourt: Number(sessionData.rpeCourtPlanned) || 0,
+            rpeGym: Number(sessionData.rpeGymPlanned) || 0
+          },
+          actual: {
+            totalTime: 0,
+            highIntensity: 0,
+            courtsUsed: 0,
+            rpeCourt: 0,
+            rpeGym: 0
+          }
+        },
+        lastUpdated: new Date().toISOString()
+      };
+
+      await setDoc(practiceRef, practiceMetrics, { merge: true });
+      return practiceMetrics;
+    } catch (error) {
+      console.error('Failed to sync session to PracticeLive:', error);
       throw error;
     }
   },

@@ -11,6 +11,7 @@ import {
 import ImageUploadModal from '../components/gym/ImageUploadModal';
 import { loadExercises, saveExercises } from '../services/firestoreService';
 import MuscleGroupEditModal from '../components/gym/MuscleGroupEditModal';
+import MergeImageModal from '../components/gym/MergeImageModal';  // Add this import
 
 const GymPage = () => {
   // Add validation helper at the top
@@ -75,6 +76,7 @@ const GymPage = () => {
   const [visibleGroups, setVisibleGroups] = useState([]);
   const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
   const [editingExercise, setEditingExercise] = useState(null);
+  const [showMergeModal, setShowMergeModal] = useState(false); // Add this near the other state declarations
 
   // Add safety check helper
   const isValidGroup = useCallback((group) => {
@@ -674,6 +676,12 @@ const GymPage = () => {
         </div>
         <div className="flex items-center gap-4 ml-4">
           <button
+            onClick={() => setShowMergeModal(true)}
+            className="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm"
+          >
+            Open Merge Image
+          </button>
+          <button
             onClick={() => setIsEditMode(!isEditMode)}
             className={`px-4 py-2 rounded-lg ${
               isEditMode 
@@ -885,6 +893,21 @@ const GymPage = () => {
           muscleGroups={muscleGroups}
           onSave={handleMuscleGroupChange}
           onClose={() => setEditingExercise(null)}
+        />
+      )}
+
+      {showMergeModal && (
+        <MergeImageModal
+          onClose={() => setShowMergeModal(false)}
+          onSave={(data) => {
+            console.log("Exercise saved:", data);
+            setCustomExercises(prev => [...prev, {
+              ...data,
+              id: crypto.randomUUID(),
+            }]);
+            setShowMergeModal(false);
+          }}
+          muscleGroups={muscleGroups.map(g => g.name)}
         />
       )}
     </div>
