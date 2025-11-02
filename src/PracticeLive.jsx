@@ -779,15 +779,15 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       totalTime: 0,
       highIntensity: 0,
       courtsUsed: 0,
-      rpeCourt: 0,
-      rpeGym: 0
+      rpeCourt: 0.0,
+      rpeGym: 0.0
     },
     actual: {
       totalTime: 0,
       highIntensity: 0,
       courtsUsed: 0,
-      rpeCourt: 0,
-      rpeGym: 0
+      rpeCourt: 0.0,
+      rpeGym: 0.0
     }
   }));
 
@@ -1618,7 +1618,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                         className="table-input" 
                         min="0"
                         max="10"
-                        step="0.5"
+                        step="0.1"
                       />
                     </td>
                     <td>
@@ -1629,7 +1629,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                         className="table-input" 
                         min="0"
                         max="10"
-                        step="0.5"
+                        step="0.1"
                       />
                     </td>
                   </tr>
@@ -1670,7 +1670,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                         className="table-input" 
                         min="0"
                         max="10"
-                        step="0.5"
+                        step="0.1"
                       />
                     </td>
                     <td>
@@ -1681,7 +1681,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                         className="table-input" 
                         min="0"
                         max="10"
-                        step="0.5"
+                        step="0.1"
                       />
                     </td>
                   </tr>
