@@ -256,34 +256,27 @@ const getCurrentMonthRange = () => {
 };
 
 const getMonthDays = activeDate => {
-  // Find the first day of the month
-  const firstOfMonth = startOfMonthUTC(activeDate);
+  // Find today's date in UTC
+  const today = parseISODateToUTC(getTodayISO());
   
-  // Find the day of week for the first of the month (0-6)
-  const firstDayOfWeek = firstOfMonth.getUTCDay();
-  
-  // Get the middle day of the month to help center the view
-  const middleOfMonth = new Date(Date.UTC(
-    firstOfMonth.getUTCFullYear(),
-    firstOfMonth.getUTCMonth(),
-    Math.ceil(firstOfMonth.getUTCDate() / 2)
-  ));
-  
-  // Calculate how many days to show before the middle week
-  // We want approximately 2.5 weeks before (17-18 days)
-  const daysBeforeMiddle = 17;
-  
-  // Calculate the start date by subtracting days from the middle
-  const firstVisibleDate = createUTCDate(
-    middleOfMonth.getUTCFullYear(),
-    middleOfMonth.getUTCMonth(),
-    middleOfMonth.getUTCDate() - daysBeforeMiddle
+  // Find the Sunday that starts the week containing today
+  const currentWeekSunday = createUTCDate(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate() - today.getUTCDay()
   );
   
-  const startISO = toISODate(firstVisibleDate);
+  // Go back 2 weeks (14 days) from the start of current week
+  const startDate = createUTCDate(
+    currentWeekSunday.getUTCFullYear(),
+    currentWeekSunday.getUTCMonth(),
+    currentWeekSunday.getUTCDate() - 14
+  );
+  
+  const startISO = toISODate(startDate);
   const days = [];
   
-  // Still generate 42 days (6 weeks) but now centered around the middle of the month
+  // Generate 42 days (6 weeks) starting from 2 weeks before current week
   for (let index = 0; index < 42; index += 1) {
     const iso = index === 0 ? startISO : addDaysToISO(startISO, index);
     days.push(parseISODateToUTC(iso));
