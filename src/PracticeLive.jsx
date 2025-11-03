@@ -774,6 +774,9 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [toastMessage, setToastMessage] = useState('');
 
   // 4. Initialize session-dependent state
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isMetricsLoaded, setIsMetricsLoaded] = useState(false);
+
   const [metrics, setMetrics] = useState(() => ({
     planned: {
       totalTime: 0,
@@ -790,33 +793,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       rpeGym: 0.0
     }
   }));
-
-  useEffect(() => {
-    const loadPracticeData = async () => {
-      if (!session?.id) return;
-
-      try {
-        const data = await practiceDataService.getPracticeData(session.id);
-
-        if (data?.metrics) {
-          setMetrics(prevMetrics => ({
-            planned: {
-              ...prevMetrics.planned,
-              ...data.metrics.planned
-            },
-            actual: {
-              ...prevMetrics.actual,
-              ...data.metrics.actual
-            }
-          }));
-        }
-      } catch (error) {
-        console.error('Failed to load practice data:', error);
-      }
-    };
-
-    loadPracticeData();
-  }, [session?.id]);
 
   const [drillRows, setDrillRows] = useState(() => {
     if (!session?.id) return [];
@@ -962,71 +938,67 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   // Load practice data from Firebase
   useEffect(() => {
-    const loadPracticeData = async () => {
-      if (!session?.id) return;
-      try {
-        const practiceData = await practiceDataService.getPracticeData(session.id);
-        if (practiceData) {
-          setMetrics({
-            planned: {
-              totalTime: practiceData.totalMinutes || 0,
-              highIntensity: practiceData.highIntensityMinutes || 0,
-              courtsUsed: practiceData.courts || 0,
-              rpeCourt: practiceData.rpeCourtPlanned || practiceData.metrics?.planned?.rpeCourt || 0,
-              rpeGym: practiceData.rpeGymPlanned || practiceData.metrics?.planned?.rpeGym || 0
-            },
-            actual: {
-              totalTime: practiceData.metrics?.actual?.totalTime || 0,
-              highIntensity: practiceData.metrics?.actual?.highIntensity || 0,
-              courtsUsed: practiceData.metrics?.actual?.courtsUsed || 0,
-              rpeCourt: practiceData.metrics?.actual?.rpeCourt || 0,
-              rpeGym: practiceData.metrics?.actual?.rpeGym || 0
-            }
+    if (!session?.id) return;
+
+    console.log('🔄 Setting up Firebase subscription');
+    
+    const unsubscribe = practiceDataService.subscribeToPracticeData(
+      session.id,
+      (practiceData, isFirst) => {
+        if (practiceData?.metrics) {
+          console.log('📥 Updating metrics state:', {
+            isFirst,
+            metrics: practiceData.metrics
           });
+          
+          setMetrics(practiceData.metrics);
+          if (isFirst) {
+            setIsMetricsLoaded(true);
+            setIsInitialLoad(false);
+          }
         }
-      } catch (error) {
-        console.error('Failed to load practice data:', error);
       }
-    };
-    loadPracticeData();
+    );
+
+    return () => unsubscribe();
   }, [session?.id]);
 
-  // Save to Firebase with debouncing
+  // Update Firebase save effect with debounce and tracking
   useEffect(() => {
-    if (!session?.id) return;
-    const savePracticeData = async () => {
+    if (!session?.id || isInitialLoad || !isMetricsLoaded) {
+      return;
+    }
+
+    let isSaving = false;
+    console.log('💾 Planning save:', { metrics });
+    
+    const timeoutId = setTimeout(async () => {
+      if (isSaving) return;
+      
       try {
-        await practiceDataService.savePracticeData(session.id, {
-          metrics,
-          drillRows,
-          attendance,
-          surveyData,
-          surveyAverages,
-          gymSurveyData,
-          gymSurveyAverages,
-          surveyCompleted: Boolean(surveyData && Object.keys(surveyData).length > 0)
-        });
-      } catch (error) {
-        console.error('Failed to save practice data:', error);
-        // Fallback to localStorage if Firebase fails
-        try {
-          localStorage.setItem(`${PRACTICE_DATA_KEY}${session.id}`, JSON.stringify({
+        isSaving = true;
+        await practiceDataService.savePracticeData(
+          session.id,
+          {
             metrics,
             drillRows,
             attendance,
-            surveyData,
-            surveyAverages,
-            gymSurveyData,
-            gymSurveyAverages
-          }));
-        } catch (localError) {
-          console.error('Failed to save to localStorage:', localError);
-        }
+            surveyCompleted
+          },
+          isInitialLoad
+        );
+        isSaving = false;
+      } catch (error) {
+        console.error('Failed to save practice data:', error);
+        isSaving = false;
       }
+    }, 500);
+
+    return () => {
+      clearTimeout(timeoutId);
+      isSaving = false;
     };
-    const timer = setTimeout(savePracticeData, 1000);
-    return () => clearTimeout(timer);
-  }, [session?.id, metrics, drillRows, attendance, surveyData, surveyAverages, gymSurveyData, gymSurveyAverages]);
+  }, [session?.id, metrics, drillRows, attendance, surveyCompleted, isInitialLoad, isMetricsLoaded]);
 
   useEffect(() => {
     const fetchWellnessData = async () => {
@@ -1050,6 +1022,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   }, []);
 
   const updateMetrics = (type, field, value) => {
+    console.log('🔄 Updating metrics:', { type, field, value });
+    
     setMetrics(prev => ({
       ...prev,
       [type]: {

@@ -1,9 +1,7 @@
-// Import the functions you need from the SDKs you need
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDckY0Pvs1Z8uheDEQ26KhixIR-g6fsuWs",
   authDomain: "basketball-eda67.firebaseapp.com",
@@ -14,19 +12,13 @@ const firebaseConfig = {
   measurementId: "G-NG04R1WVBH"
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
 
-console.log('Firebase config:', {
-  projectId: db.app.options.projectId,
-  databaseURL: db.app.options.databaseURL
+// Use memory cache instead of persistent
+const db = initializeFirestore(app, {
+  localCache: memoryLocalCache()
 });
 
-console.log('Firebase config loaded:', db ? 'Successfully' : 'Failed');
-console.log('Firebase configuration loaded:', db ? 'Firestore initialized successfully' : 'Firestore initialization failed');
-console.log('Firestore database instance:', db);
+const storage = getStorage(app);
 
-// Export everything needed
 export { app, db, storage };
