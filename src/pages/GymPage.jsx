@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import PlanBuilderModal from '../components/gym/PlanBuilderModal';
 import ExerciseLibrarySettings from '../components/gym/ExerciseLibrarySettings';
-import { savePlans, loadPlans } from '../services/planService';
-import { 
+import SidePanelPlans from '../components/gym/SidePanelPlans';
+import { savePlans, loadPlans, savePlanToFirestore } from '../services/planService';
+import {
   uploadExerciseImage,
   updateExerciseOrder,
   fetchMuscleGroups,    // Add this
@@ -77,6 +78,7 @@ const GymPage = () => {
   const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
   const [editingExercise, setEditingExercise] = useState(null);
   const [showMergeModal, setShowMergeModal] = useState(false); // Add this near the other state declarations
+  const [showSavedPlansPanel, setShowSavedPlansPanel] = useState(false);
 
   // Add safety check helper
   const isValidGroup = useCallback((group) => {
@@ -330,7 +332,7 @@ const GymPage = () => {
   };
 
   // Modify createNewPlan to not add to minimizedPlans
-  const createNewPlan = () => {
+  const createNewPlan = async () => {
     const newPlan = {
       id: crypto.randomUUID(),
       name: 'New Workout Plan',
@@ -348,6 +350,16 @@ const GymPage = () => {
       width: 750,
       height: 600
     };
+
+    // Save to Firestore immediately to get firebaseId
+    try {
+      const firebaseId = await savePlanToFirestore(newPlan);
+      newPlan.firebaseId = firebaseId;
+      console.log('✅ New plan created and saved to Firestore:', newPlan.name);
+    } catch (error) {
+      console.error('Failed to save new plan to Firestore:', error);
+      // Continue anyway - plan will be in local state
+    }
 
     setPlans(prev => [...prev, newPlan]); // Only update state
     setOpenPlanIds(prev => [...prev, newPlan.id]);
@@ -421,24 +433,56 @@ const GymPage = () => {
     setCurrentPlanId(planId);
   };
 
-  const renamePlan = (planId, newName) => {
+  const renamePlan = async (planId, newName) => {
+    const updatedPlan = plans.find(p => p.id === planId);
+    if (!updatedPlan) return;
+
+    updatedPlan.name = newName;
+    updatedPlan.updatedAt = new Date();
+
+    // Update local state
     setPlans(plans.map(plan =>
       plan.id === planId
         ? { ...plan, name: newName, updatedAt: new Date() }
         : plan
     ));
+
+    // Save to Firestore
+    try {
+      if (updatedPlan.firebaseId) {
+        await savePlanToFirestore(updatedPlan);
+        console.log('✅ Plan renamed and saved to Firestore:', newName);
+      }
+    } catch (error) {
+      console.error('Failed to save renamed plan:', error);
+    }
   };
 
   const updatePlan = async (planId, updatedExercises) => {
+    const currentPlan = plans.find(p => p.id === planId);
+    if (!currentPlan) return;
+
     const updatedPlan = {
-      ...plans.find(p => p.id === planId),
+      ...currentPlan,
       exercises: updatedExercises,
       updatedAt: new Date()
     };
 
+    // Update local state immediately for responsive UI
     setPlans(prev => prev.map(p =>
       p.id === planId ? updatedPlan : p
     ));
+
+    // Auto-save to Firestore in the background
+    try {
+      if (currentPlan.firebaseId) {
+        await savePlanToFirestore(updatedPlan);
+        console.log('🔄 Plan auto-saved to Firestore');
+      }
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+      // Don't show alert for auto-save failures to avoid interrupting user
+    }
   };
 
   const toggleEditMode = (planId, value) => {
@@ -598,17 +642,34 @@ const GymPage = () => {
   };
 
   const savePlan = async (planId) => {
-    const plan = plans.find(p => p.id === planId);
-    if (!plan) return;
+    try {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) {
+        console.error('Plan not found:', planId);
+        return;
+      }
 
-    const updatedPlan = {
-      ...plan,
-      updatedAt: new Date()
-    };
+      console.log('💾 Saving plan to Firestore:', plan.name);
 
-    setPlans(prev => 
-      prev.map(p => p.id === planId ? updatedPlan : p)
-    );
+      // Save to Firestore
+      const firebaseId = await savePlanToFirestore(plan);
+
+      // Update local state with the Firebase ID and updated timestamp
+      const updatedPlan = {
+        ...plan,
+        firebaseId: firebaseId || plan.firebaseId,
+        updatedAt: new Date()
+      };
+
+      setPlans(prev =>
+        prev.map(p => p.id === planId ? updatedPlan : p)
+      );
+
+      console.log('✅ Plan saved successfully to Firestore');
+    } catch (error) {
+      console.error('❌ Failed to save plan to Firestore:', error);
+      alert('Failed to save plan. Please check your internet connection and try again.');
+    }
   };
 
   const handleMuscleGroupChange = (exerciseId, newGroup) => {
@@ -633,6 +694,43 @@ const GymPage = () => {
       if (currentPlanId === planId) {
         setCurrentPlanId(null);
       }
+    }
+  };
+
+  const handleOpenPlanFromSidebar = (planData) => {
+    // Check if plan already exists in state
+    const existingPlan = plans.find(p => p.firebaseId === planData.firebaseId);
+
+    if (existingPlan) {
+      // Plan already loaded, just open it
+      if (!openPlanIds.includes(existingPlan.id)) {
+        setOpenPlanIds(prev => [...prev, existingPlan.id]);
+        setMinimizedPlans(prev => prev.filter(id => id !== existingPlan.id));
+      }
+      setCurrentPlanId(existingPlan.id);
+      setActivePlanId(existingPlan.id);
+    } else {
+      // Load plan into state
+      const newPlan = {
+        ...planData,
+        id: planData.id || crypto.randomUUID(),
+      };
+
+      setPlans(prev => [...prev, newPlan]);
+      setOpenPlanIds(prev => [...prev, newPlan.id]);
+      setCurrentPlanId(newPlan.id);
+      setActivePlanId(newPlan.id);
+
+      // Set initial position
+      const initialPosition = {
+        x: window.innerWidth - 800,
+        y: 20
+      };
+      const initialSize = {
+        width: 750,
+        height: 600
+      };
+      setPlanPositions(prev => ({ ...prev, [newPlan.id]: { ...initialPosition, ...initialSize } }));
     }
   };
 
@@ -676,6 +774,12 @@ const GymPage = () => {
         </div>
         <div className="flex items-center gap-4 ml-4">
           <button
+            onClick={() => setShowSavedPlansPanel(true)}
+            className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium"
+          >
+            📋 Saved Plans
+          </button>
+          <button
             onClick={() => setShowMergeModal(true)}
             className="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm"
           >
@@ -684,7 +788,7 @@ const GymPage = () => {
           <button
             onClick={() => setIsEditMode(!isEditMode)}
             className={`px-4 py-2 rounded-lg ${
-              isEditMode 
+              isEditMode
                 ? 'bg-green-500 hover:bg-green-600 text-white'
                 : 'bg-gray-100 hover:bg-gray-200'
             } text-sm`}
@@ -910,6 +1014,13 @@ const GymPage = () => {
           muscleGroups={muscleGroups.map(g => g.name)}
         />
       )}
+
+      <SidePanelPlans
+        isOpen={showSavedPlansPanel}
+        onClose={() => setShowSavedPlansPanel(false)}
+        onOpenPlan={handleOpenPlanFromSidebar}
+        activePlanId={activePlanId}
+      />
     </div>
   );
 };

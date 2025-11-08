@@ -80,3 +80,79 @@ export const deletePlanFromFirestore = async (planId) => {
   const docRef = doc(db, 'plans', planId);
   await deleteDoc(docRef);
 };
+
+// Folder operations
+export const createFolder = async (folderName, parentId = null) => {
+  const folderData = {
+    name: folderName,
+    type: 'folder',
+    parentId: parentId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  const docRef = await addDoc(collection(db, 'plans'), folderData);
+  return { ...folderData, firebaseId: docRef.id };
+};
+
+export const movePlanToFolder = async (planId, folderId) => {
+  const docRef = doc(db, 'plans', planId);
+  await updateDoc(docRef, {
+    parentFolder: folderId,
+    updatedAt: new Date().toISOString()
+  });
+};
+
+export const renamePlanOrFolder = async (itemId, newName) => {
+  const docRef = doc(db, 'plans', itemId);
+  await updateDoc(docRef, {
+    name: newName,
+    updatedAt: new Date().toISOString()
+  });
+};
+
+export const duplicatePlan = async (plan) => {
+  try {
+    console.log('📋 Duplicating plan:', plan.name);
+
+    // Create a clean copy of the plan
+    const duplicatedPlan = {
+      name: `${plan.name} (Copy)`,
+      exercises: JSON.parse(JSON.stringify(plan.exercises || [])),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isArchived: false,
+      type: plan.type || 'plan', // Ensure it's marked as a plan, not folder
+      ...(plan.parentFolder && { parentFolder: plan.parentFolder }) // Keep folder if it had one
+    };
+
+    // Remove any undefined fields
+    Object.keys(duplicatedPlan).forEach(key => {
+      if (duplicatedPlan[key] === undefined) {
+        delete duplicatedPlan[key];
+      }
+    });
+
+    console.log('💾 Saving duplicated plan to Firestore...');
+    const docRef = await addDoc(collection(db, 'plans'), duplicatedPlan);
+    console.log('✅ Plan duplicated successfully, Firebase ID:', docRef.id);
+
+    return {
+      ...duplicatedPlan,
+      id: crypto.randomUUID(), // Generate local ID for React state
+      firebaseId: docRef.id
+    };
+  } catch (error) {
+    console.error('❌ Failed to duplicate plan:', error);
+    console.error('Plan data:', plan);
+    throw new Error(`Duplication failed: ${error.message}`);
+  }
+};
+
+export const toggleArchivePlan = async (planId, currentArchiveState) => {
+  const docRef = doc(db, 'plans', planId);
+  await updateDoc(docRef, {
+    isArchived: !currentArchiveState,
+    updatedAt: new Date().toISOString()
+  });
+};
