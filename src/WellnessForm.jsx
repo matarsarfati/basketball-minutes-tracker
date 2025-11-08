@@ -31,7 +31,8 @@ export default function WellnessForm() {
   const [values, setValues] = useState({ 
     sleep: null, 
     fatigue: null, 
-    soreness: null 
+    soreness: null,
+    physioNotes: "" 
   });
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -63,7 +64,7 @@ export default function WellnessForm() {
       setValues(responses[playerName]);
     } else {
       // New player - reset to null
-      setValues({ sleep: null, fatigue: null, soreness: null });
+      setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
     }
   };
 
@@ -95,7 +96,7 @@ export default function WellnessForm() {
         setTimeout(() => {
           setShowSuccess(false);
           setSelectedPlayer("");
-          setValues({ sleep: null, fatigue: null, soreness: null });
+          setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
         }, 2000);
       } else {
         throw new Error("Failed to save wellness check");
@@ -207,7 +208,7 @@ export default function WellnessForm() {
               type="button"
               onClick={() => {
                 setSelectedPlayer("");
-                setValues({ sleep: null, fatigue: null, soreness: null });
+                setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
               }}
               className="survey-primary w-full"
               style={{ backgroundColor: '#14b8a6' }}
@@ -250,6 +251,19 @@ export default function WellnessForm() {
               setValues(prev => ({ ...prev, [name]: value })))}
             {renderControl("soreness", values.soreness, (name, value) => 
               setValues(prev => ({ ...prev, [name]: value })))}
+
+            <div className="survey-control">
+              <label className="control-label">Notes for Physiotherapist (optional)</label>
+              <textarea
+                value={values.physioNotes}
+                onChange={e => setValues(prev => ({ ...prev, physioNotes: e.target.value }))}
+                className="survey-textarea"
+                placeholder="Any injuries, pain, or concerns the physio should know about..."
+                rows={4}
+                dir="auto"
+                lang="he"
+              />
+            </div>
 
             {error && <div className="survey-error">{error}</div>}
 

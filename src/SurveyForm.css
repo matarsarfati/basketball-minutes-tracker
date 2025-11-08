@@ -12,3 +12,149 @@
   font-size: 14px;
   min-width: 30px;
 }
+
+.survey-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+  background-color: white;
+  transition: border-color 0.2s;
+}
+
+.survey-textarea:focus {
+  outline: none;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
+}
+
+.survey-textarea::placeholder {
+  color: #94a3b8;
+}
+
+.survey-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.survey-control {
+  margin-bottom: 1.5rem;
+}
+
+.survey-label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.survey-range {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, #14b8a6, #06b6d4, #0ea5e9);
+  border-radius: 3px;
+  margin: 1rem 0;
+}
+
+.survey-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border: 2px solid #14b8a6;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.survey-range::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.survey-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: #4b5563;
+}
+
+.survey-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  margin-bottom: 1.5rem;
+  background-color: white;
+  cursor: pointer;
+}
+
+.survey-select:focus {
+  outline: none;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
+}
+
+.survey-form {
+  background-color: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.survey-submit {
+  width: 100%;
+  padding: 0.875rem;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.survey-submit:hover {
+  opacity: 0.9;
+}
+
+.survey-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.survey-error {
+  color: #dc2626;
+  background-color: #fee2e2;
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.survey-emoji {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* Add responsive styles */
+@media (max-width: 640px) {
+  .survey-container {
+    padding: 1rem;
+  }
+  
+  .survey-form {
+    padding: 1rem;
+  }
+}

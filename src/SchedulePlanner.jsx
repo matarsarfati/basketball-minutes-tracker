@@ -1,13 +1,12 @@
 // src/SchedulePlanner.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import html2canvas from "html2canvas";
 import RosterManager from './RosterManager';
 import { scheduleService } from './services/scheduleService';
 import { practiceDataService } from './services/practiceDataService';
 import FilterComponent from './FilterComponent';
+import { exportScheduleToPDF, countSessionsInRange } from './services/scheduleExportService';
+import DateRangeModal from './components/DateRangeModal';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -1671,256 +1670,55 @@ const updatePart = (sessionId, partId, field, value) => {
 
   const selectedMetrics = selectedSession ? getSessionMetrics(selectedSession) : null;
 
-  const getExportMonthName = (date) => {
-    return new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(date);
-  };
+  // State for date range modal
+  const [showDateRangeModal, setShowDateRangeModal] = useState(false);
+  const [exportDateRange, setExportDateRange] = useState({
+    startDate: null,
+    endDate: null
+  });
 
-  const sanitizeForPDF = text => {
-    if (!text) return '';
-    // Check for Hebrew characters
-    const hasHebrew = /[\u0590-\u05FF]/.test(text);
-    if (hasHebrew) {
-      return '[Hebrew text - view in app]';
-    }
-    // Keep only ASCII-safe characters
-    return text.replace(/[^\x20-\x7E]/g, '');
-  };
-
-  const buildSessionDetails = (session) => {
-    if (!session) return "";
-    const parts = [
-      `${formatTypeLabel(session.type)}`,
-      session.title && `Title: ${sanitizeForPDF(session.title)}`,
-      session.startTime && `Time: ${formatTime(session.startTime)}`,
-      `Total: ${session.totalMinutes || 0}min`,
-      `High: ${session.highIntensityMinutes || 0}min`,
-      session.courts && `Courts: ${session.courts}`,
-      session.notes && `Notes: ${sanitizeForPDF(session.notes)}`
-    ].filter(Boolean);
-    return parts.join('\n');
-  };
-
-  const buildSessionLines = (session) => {
-    const lines = [];
-    const isDayOff = session.type === "DayOff";
-    const showTime = !isDayOff;
-    const typeLabel = formatTypeLabel(session.type);
-  
-    // Time line (if not Day Off)
-    if (showTime && session.startTime) {
-      lines.push({ text: formatTime(session.startTime), isBold: false });
-    }
-  
-    // Type/title line
-    lines.push({ text: typeLabel, isBold: true });
-  
-    // Optional title if different from type
-    if (session.title && session.title.trim() !== typeLabel) {
-      lines.push({ text: session.title.trim(), isBold: false });
-    }
-  
-    // Stats (always include all three in fixed order)
-    if (!isDayOff) {
-      lines.push(
-        { text: `Total: ${session.totalMinutes || 0}m`, isBold: false },
-        { text: `High: ${session.highIntensityMinutes || 0}m`, isBold: false },
-        { text: `Courts: ${session.courts || 0}`, isBold: false }
-      );
-    }
-  
-    return lines;
-  };
-
-  const drawSessionBox = (doc, x, y, width, height, session) => {
-    const typeColors = {
-      Practice: { fill: [245, 158, 11], alpha: 0.12 },
-      Game: { fill: [220, 38, 38], alpha: 0.12 },
-      DayOff: { fill: [16, 185, 129], alpha: 0.12 },
-      SplitPractice: { fill: [249, 115, 22], alpha: 0.12 },
-      Meeting: { fill: [59, 130, 246], alpha: 0.12 },
-      Recovery: { fill: [245, 158, 11], alpha: 0.12 },
-      Travel: { fill: [139, 92, 246], alpha: 0.12 },
-      Default: { fill: [71, 85, 105], alpha: 0.12 }
-    };
-  
-    const isDayOff = session.type === "DayOff";
-    const colors = typeColors[session.type] || typeColors.Default;
-    const padding = 2;
-    const lineHeight = 4; // Increased from 3 to 4
-  
-    // Skip Hebrew content
-    const hasHebrew = text => /[\u0590-\u05FF]/.test(text);
-    const sanitizeText = text => hasHebrew(text) ? '' : text;
-  
-    if (isDayOff) {
-      // Day Off gets special treatment - full height centered label
-      doc.setFillColor(...colors.fill);
-      doc.setGState(new doc.GState({ opacity: colors.alpha }));
-      doc.rect(x, y, width, height, 'F');
-      doc.setGState(new doc.GState({ opacity: 1 }));
-  
-      doc.setFontSize(6); // Increased from 5
-      doc.setTextColor(...colors.fill);
-      doc.setFont(undefined, 'bold');
-      const dayOffText = "Day Off";
-      const textWidth = doc.getStringUnitWidth(dayOffText) * doc.internal.getFontSize() / doc.internal.scaleFactor;
-      const centerX = x + (width - textWidth) / 2;
-      const centerY = y + (height / 2) + (doc.internal.getFontSize() / 2.8);
-      doc.text(dayOffText, centerX, centerY);
-      return height;
-    }
-  
-    // Get all lines we need to draw
-    const lines = [
-      { text: formatTime(session.startTime), isBold: false },
-      { text: formatTypeLabel(session.type), isBold: true },
-      // Only add title if it's not Hebrew and different from type
-      ...(!hasHebrew(session.title) && session.title && session.title !== formatTypeLabel(session.type) 
-        ? [{ text: session.title.trim(), isBold: false }] 
-        : []),
-      { text: `Total: ${session.totalMinutes || 0}m`, isBold: false },
-      { text: `High: ${session.highIntensityMinutes || 0}m`, isBold: false },
-      { text: `Courts: ${session.courts || 0}`, isBold: false }
-    ].filter(line => line.text); // Remove empty lines
-  
-    // Calculate box height
-    const requiredHeight = Math.max(
-      (padding * 2) + (lines.length * lineHeight),
-      height
+  // Calculate session count for export preview
+  const exportSessionCount = useMemo(() => {
+    if (!exportDateRange.startDate || !exportDateRange.endDate) return 0;
+    return countSessionsInRange(
+      sessions,
+      exportDateRange.startDate,
+      exportDateRange.endDate,
+      toISODate
     );
-  
-    // Draw box background
-    doc.setFillColor(...colors.fill);
-    doc.setGState(new doc.GState({ opacity: colors.alpha }));
-    doc.rect(x, y, width, requiredHeight, 'F');
-    doc.setGState(new doc.GState({ opacity: 1 }));
-  
-    // Draw all text lines
-    doc.setFontSize(6); // Increased from 5
-    let currentY = y + padding + 3; // Adjusted initial Y position
-  
-    lines.forEach(line => {
-      doc.setFont(undefined, line.isBold ? 'bold' : 'normal');
-      doc.setTextColor(...colors.fill);
-      
-      // Handle text width constraints
-      let text = line.text;
-      const maxWidth = width - (padding * 2);
-      
-      while (doc.getStringUnitWidth(text) * doc.internal.getFontSize() / doc.internal.scaleFactor > maxWidth 
-             && text.length > 3) {
-        text = text.slice(0, -1) + '...';
-      }
-      
-      doc.text(text, x + padding, currentY);
-      currentY += lineHeight;
-    });
-  
-    return requiredHeight;
+  }, [exportDateRange, sessions, toISODate]);
+
+  // Handle PDF export with date range selection
+  const handleExportPDF = () => {
+    // Use current filter range as default, or view month if no filter
+    const defaultStart = fromDate
+      ? parseISODateToUTC(fromDate)
+      : startOfMonthUTC(viewMonth);
+    const defaultEnd = toDate
+      ? parseISODateToUTC(toDate)
+      : endOfMonthUTC(viewMonth);
+
+    setExportDateRange({ startDate: defaultStart, endDate: defaultEnd });
+    setShowDateRangeModal(true);
   };
 
-  const handleExportPDF = async () => {
+  const handleConfirmExport = async ({ startDate, endDate }) => {
+    setShowDateRangeModal(false);
     setIsExporting(true);
     try {
-      // Use visibleSessions here instead of getting from sessionsByDate
-      // This ensures exports respect the date range filter
-      const sessionsToExport = visibleSessions;
-      
-      const doc = new jsPDF({ orientation: "landscape", format: "a4" });
-      
-      // Page dimensions and margins
-      const pageWidth = doc.internal.pageSize.width;
-      const pageHeight = doc.internal.pageSize.height;
-      const margin = 10;
-      const effectiveWidth = pageWidth - (margin * 2);
-      const effectiveHeight = pageHeight - (margin * 2);
-      
-      // Grid dimensions - use fixed row height for consistent sizing
-      const colCount = 7;
-      const rowCount = 6;
-      const colWidth = effectiveWidth / colCount;
-      const rowHeight = 70; // Fixed height to ensure content fits
-      const cellPadding = 1.5; // Reduced padding to maximize content space
-      
-      // Draw title with smaller font to allow more space for grid
-      const monthName = getExportMonthName(viewMonth);
-      const year = viewMonth.getUTCFullYear();
-      doc.setFontSize(14); // Reduced from 16
-      doc.setTextColor(0);
-      doc.text(`${monthName} ${year}`, margin, margin + 6); // Reduced Y offset
-      
-      // Draw weekday headers with smaller font
-      doc.setFontSize(7); // Reduced from 8
-      doc.setTextColor(100);
-      WEEKDAYS.forEach((day, index) => {
-        doc.text(day, margin + (colWidth * index) + 3, margin + 15); // Reduced Y offset
+      await exportScheduleToPDF({
+        startDate,
+        endDate,
+        sessions,
+        sessionsByDate,
+        toISODate,
+        slotOf,
+        formatTime,
+        formatTypeLabel
       });
-      
-      // Adjust grid start position
-      const gridStartY = margin + 20; // Reduced from 25
-
-      // Get calendar data with special Day Off handling
-      const calendarDays = monthDays.map(dayDate => {
-        const dateISO = toISODate(dayDate);
-        const daySessions = sessionsByDate.get(dateISO) || [];
-        const dayOffSession = daySessions.find(s => s.type === "DayOff");
-        
-        return {
-          date: dayDate,
-          dateISO,
-          dayNum: dayDate.getUTCDate(),
-          isOutside: !isSameMonth(dayDate, viewMonth),
-          dayOffSession,
-          // Only set AM/PM sessions if not a Day Off
-          amSession: dayOffSession ? null : daySessions.find(s => s.slot === "AM" || slotOf(s.startTime) === "AM"),
-          pmSession: dayOffSession ? null : daySessions.find(s => s.slot === "PM" || slotOf(s.startTime) === "PM")
-        };
-      });
-
-      // Draw cells with content
-      calendarDays.forEach((day, index) => {
-        const row = Math.floor(index / 7);
-        const col = index % 7;
-        const x = margin + (col * colWidth);
-        const y = gridStartY + (row * rowHeight);
-        
-        // Draw cell border
-        doc.rect(x, y, colWidth, rowHeight);
-        
-        // Draw day number
-        doc.setFontSize(10);
-        doc.setTextColor(day.isOutside ? 160 : 0);
-        doc.text(String(day.dayNum), x + 4, y + 6);
-        
-        // Draw sessions - handle Day Off differently
-        if (day.dayOffSession) {
-          // Draw Day Off box taking full height (minus day number space and padding)
-          const fullHeight = rowHeight - 10; // Leave space for day number
-          drawSessionBox(doc, x + cellPadding, y + 8,
-            colWidth - (cellPadding * 2), fullHeight,
-            day.dayOffSession);
-        } else {
-          // Regular AM/PM split
-          const sessionHeight = (rowHeight - 8 - cellPadding * 2) / 2;
-          
-          if (day.amSession) {
-            drawSessionBox(doc, x + cellPadding, y + 8, 
-              colWidth - (cellPadding * 2), sessionHeight, 
-              day.amSession);
-          }
-          
-          if (day.pmSession) {
-            drawSessionBox(doc, x + cellPadding, y + 8 + sessionHeight + cellPadding,
-              colWidth - (cellPadding * 2), sessionHeight,
-              day.pmSession);
-          }
-        }
-      });
-
-      const filename = `team-schedule-${monthName.toLowerCase()}-${year}.pdf`;
-      doc.save(filename);
     } catch (error) {
       console.error('PDF export failed:', error);
+      alert('Failed to export PDF. Please try again.');
     } finally {
       setIsExporting(false);
     }
@@ -2662,6 +2460,17 @@ const updatePart = (sessionId, partId, field, value) => {
           </div>
         </div>
       )}
+
+      {/* Date Range Modal for PDF Export */}
+      <DateRangeModal
+        isOpen={showDateRangeModal}
+        onClose={() => setShowDateRangeModal(false)}
+        onConfirm={handleConfirmExport}
+        defaultStartDate={exportDateRange.startDate}
+        defaultEndDate={exportDateRange.endDate}
+        sessionCount={exportSessionCount}
+        onDatesChange={setExportDateRange}
+      />
     </div>
   );
 }

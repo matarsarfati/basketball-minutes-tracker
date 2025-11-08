@@ -28,7 +28,7 @@ export default function WellnessSurvey() {
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [responses, setResponses] = useState({});
   const [completed, setCompleted] = useState({});
-  const [values, setValues] = useState({ sleep: 5, fatigue: 5, soreness: 5 });
+  const [values, setValues] = useState({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -121,7 +121,7 @@ export default function WellnessSurvey() {
         <button 
           onClick={() => {
             setSelectedPlayer("");
-            setValues({ sleep: 5, fatigue: 5, soreness: 5 });
+            setValues({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
           }}
           className="survey-button"
           style={{ backgroundColor: '#14b8a6' }}
@@ -166,7 +166,7 @@ export default function WellnessSurvey() {
             if (responses[e.target.value]) {
               setValues(responses[e.target.value]);
             } else {
-              setValues({ sleep: 5, fatigue: 5, soreness: 5 });
+              setValues({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
             }
           }}
           className="survey-select"
@@ -185,6 +185,21 @@ export default function WellnessSurvey() {
           setValues(prev => ({ ...prev, [name]: value })))}
         {renderControl("soreness", values.soreness, (name, value) => 
           setValues(prev => ({ ...prev, [name]: value })))}
+
+        <div className="survey-control">
+          <label className="survey-label">
+            Notes for Physiotherapist (optional)
+          </label>
+          <textarea
+            value={values.physioNotes}
+            onChange={e => setValues(prev => ({ ...prev, physioNotes: e.target.value }))}
+            className="survey-textarea"
+            placeholder="Any injuries, pain, or concerns the physio should know about..."
+            rows={4}
+            dir="auto"
+            lang="he"
+          />
+        </div>
 
         {error && <div className="survey-error">{error}</div>}
 
