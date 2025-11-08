@@ -1,33 +1,25 @@
 import pdfMake from 'pdfmake/build/pdfmake';
 import * as pdfFonts from 'pdfmake/build/vfs_fonts';
+import { heeboFonts } from './heeboFonts';
 
 // Set the fonts
 pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts;
 
-const loadFontAsBase64 = async (fontPath) => {
-  try {
-    const response = await fetch(fontPath);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Failed to load font:', error);
-    return null;
-  }
-};
+// Flag to track if fonts are initialized
+let fontsInitialized = false;
 
-const initializeFonts = async () => {
-  const heeboRegular = await loadFontAsBase64('/fonts/Heebo-Regular.ttf');
-  const heeboBold = await loadFontAsBase64('/fonts/Heebo-Bold.ttf');
-  
-  if (heeboRegular && heeboBold) {
-    pdfMake.vfs['Heebo-Regular.ttf'] = heeboRegular.split(',')[1];
-    pdfMake.vfs['Heebo-Bold.ttf'] = heeboBold.split(',')[1];
-    
+const initializeFonts = () => {
+  if (fontsInitialized) {
+    return true;
+  }
+
+  try {
+    console.log('Configuring Heebo fonts...');
+
+    // Add Heebo fonts to pdfMake VFS
+    pdfMake.vfs['Heebo-Regular.ttf'] = heeboFonts['Heebo-Regular.ttf'];
+    pdfMake.vfs['Heebo-Bold.ttf'] = heeboFonts['Heebo-Bold.ttf'];
+
     pdfMake.fonts = {
       Heebo: {
         normal: 'Heebo-Regular.ttf',
@@ -42,7 +34,37 @@ const initializeFonts = async () => {
         bolditalics: 'Roboto-MediumItalic.ttf'
       }
     };
+
+    fontsInitialized = true;
+    console.log('✓ Heebo fonts configured successfully');
+    return true;
+  } catch (error) {
+    console.error('✗ Error initializing fonts:', error);
+    return false;
   }
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return "—";
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[date.getDay()];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${dayName}, ${day}/${month}/${year}`;
+  } catch {
+    return dateString;
+  }
+};
+
+const formatGymRPE = (value) => {
+  if (!value || value === 0) return 'No GYM';
+  return value.toString();
 };
 
 const formatSessionTime = (session) => {
@@ -86,8 +108,9 @@ export const generatePrePracticePDF = async ({
   wellnessData,
   roster
 }) => {
-  await initializeFonts();
-  
+  const fontsLoaded = initializeFonts();
+  const fontFamily = fontsLoaded ? 'Heebo' : 'Roboto';
+
   const docDefinition = {
     content: [
       // Header
@@ -104,7 +127,7 @@ export const generatePrePracticePDF = async ({
           {
             width: '*',
             stack: [
-              { text: `Date: ${session?.date || '—'}` },
+              { text: `Date: ${formatDate(session?.date)}` },
               { text: `Time: ${formatSessionTime(session)}` },
               { text: `Type: ${session?.type || 'Practice'}` }
             ]
@@ -125,7 +148,9 @@ export const generatePrePracticePDF = async ({
                 [{ text: 'Metric', style: 'tableHeader' }, { text: 'Value', style: 'tableHeader' }],
                 ['Total Time (min)', metrics?.planned?.totalTime?.toString() || '—'],
                 ['High Intensity (min)', metrics?.planned?.highIntensity?.toString() || '—'],
-                ['Courts Used', metrics?.planned?.courtsUsed?.toString() || '—']
+                ['Courts Used', metrics?.planned?.courtsUsed?.toString() || '—'],
+                ['Court RPE', metrics?.planned?.rpeCourt?.toString() || '—'],
+                ['Gym RPE', formatGymRPE(metrics?.planned?.rpeGym)]
               ]
             },
             layout: 'lightHorizontalLines'
@@ -197,6 +222,19 @@ export const generatePrePracticePDF = async ({
                   { text: data.physioNotes || data.notes || '—', alignment: 'right', preserveLeadingSpaces: true }
                 ])
               ]
+            },
+            layout: {
+              fillColor: (rowIndex, node, columnIndex) => {
+                if (rowIndex === 0) return '#1d4ed8'; // Header row
+                if (rowIndex > 0) {
+                  const playerEntries = Object.entries(wellnessData.responses);
+                  const playerData = playerEntries[rowIndex - 1]?.[1];
+                  if (playerData && shouldHighlightPlayer(playerData)) {
+                    return '#ffcccc'; // Light red for concerning metrics
+                  }
+                }
+                return null;
+              }
             }
           }
         ]
@@ -220,7 +258,7 @@ export const generatePrePracticePDF = async ({
       }
     },
     defaultStyle: {
-      font: 'Heebo'
+      font: fontFamily
     }
   };
 
@@ -240,8 +278,9 @@ export const generatePracticePDF = async ({
   gymSurveyData,
   gymSurveyAverages
 }) => {
-  await initializeFonts();
-  
+  const fontsLoaded = initializeFonts();
+  const fontFamily = fontsLoaded ? 'Heebo' : 'Roboto';
+
   const docDefinition = {
     content: [
       // Header
@@ -352,7 +391,7 @@ export const generatePracticePDF = async ({
       }
     },
     defaultStyle: {
-      font: 'Heebo'
+      font: fontFamily
     }
   };
 
@@ -361,20 +400,31 @@ export const generatePracticePDF = async ({
 };
 
 // Helper functions
+const shouldHighlightPlayer = (data) => {
+  const sleep = Number(data.sleep) || 0;
+  const fatigue = Number(data.fatigue) || 0;
+  const soreness = Number(data.soreness) || 0;
+
+  return sleep < 5 || fatigue >= 7 || soreness >= 7;
+};
+
 const getWellnessStatus = (metric, value) => {
   if (!value || value === '—') return '—';
 
   switch (metric) {
     case 'sleep':
+      if (value >= 8) return '✓ Excellent';
       if (value >= 7) return '✓ Good';
-      if (value >= 5) return '⚠️ Moderate';
+      if (value >= 5) return '⚠️ Fair';
       return '❌ Poor';
 
     case 'fatigue':
     case 'soreness':
+      if (value <= 2) return '✓ Excellent';
       if (value <= 4) return '✓ Good';
-      if (value <= 6) return '⚠️ Moderate';
-      return '❌ Poor';
+      if (value <= 6) return '⚠️ Fair';
+      if (value <= 8) return '⚠️ High';
+      return '❌ Critical';
 
     default:
       return '—';
