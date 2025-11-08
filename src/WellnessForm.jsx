@@ -58,13 +58,15 @@ export default function WellnessForm() {
   const handlePlayerChange = (e) => {
     const playerName = e.target.value;
     setSelectedPlayer(playerName);
-    
+
+    // Always reset form fields to blank (privacy: don't show previous responses)
+    setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
+
+    // Check if player has already submitted today (for info message only)
     if (responses[playerName]) {
-      // If player already submitted, load their values
-      setValues(responses[playerName]);
+      setError("ℹ️ You have already submitted today's wellness check. Submit again to update it.");
     } else {
-      // New player - reset to null
-      setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
+      setError("");
     }
   };
 
@@ -87,14 +89,22 @@ export default function WellnessForm() {
     try {
       const result = await wellnessService.submitWellnessCheck(selectedPlayer, values);
       if (result.success) {
-        setShowSuccess(true);
+        // Update completed list and responses state
         setCompleted(prev => ({
           ...prev,
           [selectedPlayer]: values
         }));
-        // Reset after success
+        setResponses(prev => ({
+          ...prev,
+          [selectedPlayer]: values
+        }));
+
+        // Show success message briefly
+        setError("✅ Wellness check saved!");
+
+        // Reset form after short delay
         setTimeout(() => {
-          setShowSuccess(false);
+          setError("");
           setSelectedPlayer("");
           setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
         }, 2000);

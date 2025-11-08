@@ -214,13 +214,18 @@ export default function SurveyForm() {
       localStorage.setItem(STORE_KEY, JSON.stringify(surveys));
       setStore(surveys);
 
-      // Reset form - don't show success screen
+      // Reset form - clear all fields including info message
       setRpe(null);
       setLegs(null);
       setNotes('');
       setSelectedPlayer('');
       setError('');
       // Don't set showSuccess to true - stay on form
+
+      // Show brief success feedback (optional)
+      const tempSuccess = error;
+      setError('✅ Response saved!');
+      setTimeout(() => setError(''), 2000);
 
     } catch (err) {
       console.error('Failed to save survey:', err);
@@ -232,23 +237,26 @@ export default function SurveyForm() {
     const playerName = e.target.value;
     setSelectedPlayer(playerName);
 
+    // Always reset form fields to blank (privacy: don't show previous responses)
+    setRpe(null);
+    setLegs(null);
+    setNotes("");
+
+    // Check if player has already submitted (for confirmation message only)
     try {
       const stored = localStorage.getItem(STORE_KEY);
       if (stored) {
         const surveys = JSON.parse(stored);
         const response = surveys[sessionId]?.[playerName];
         if (response) {
-          setRpe(response.rpe);
-          setLegs(response.legs);
-          setNotes(response.notes || "");
+          // Player has already submitted - show info message but don't pre-fill
+          setError("ℹ️ You have already submitted a response. Submit again to update it.");
         } else {
-          setRpe(null);
-          setLegs(null);
-          setNotes("");
+          setError("");
         }
       }
     } catch (err) {
-      console.error("Failed to load existing response:", err);
+      console.error("Failed to check existing response:", err);
     }
   };
 

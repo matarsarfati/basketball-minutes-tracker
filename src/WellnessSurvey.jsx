@@ -28,7 +28,7 @@ export default function WellnessSurvey() {
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [responses, setResponses] = useState({});
   const [completed, setCompleted] = useState({});
-  const [values, setValues] = useState({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
+  const [values, setValues] = useState({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -56,8 +56,14 @@ export default function WellnessSurvey() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (!selectedPlayer) {
       setError("Please select a player");
+      return;
+    }
+
+    if (values.sleep === null || values.fatigue === null || values.soreness === null) {
+      setError("Please answer all 3 questions");
       return;
     }
 
@@ -67,12 +73,25 @@ export default function WellnessSurvey() {
     try {
       const result = await wellnessService.submitWellnessCheck(selectedPlayer, values);
       if (result.success) {
-        setShowSuccess(true);
+        // Update completed list and responses state
         setCompleted(prev => ({
           ...prev,
           [selectedPlayer]: values
         }));
-        setTimeout(() => setShowSuccess(false), 2000);
+        setResponses(prev => ({
+          ...prev,
+          [selectedPlayer]: values
+        }));
+
+        // Show success message briefly
+        setError("✅ Wellness check saved!");
+
+        // Reset form after short delay
+        setTimeout(() => {
+          setError("");
+          setSelectedPlayer("");
+          setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
+        }, 2000);
       } else {
         throw new Error("Failed to save wellness check");
       }
@@ -85,26 +104,34 @@ export default function WellnessSurvey() {
 
   const renderControl = (name, value, onChange) => {
     const question = QUESTIONS[name];
+    const hasValue = value !== null;
+    const displayValue = hasValue ? value : 5;
+
     return (
       <div className="survey-control">
         <label className="survey-label">
           {question.title}
-          <span className="survey-emoji">{question.emojis[value - 1]}</span>
+          <span className="survey-emoji">{question.emojis[displayValue - 1]}</span>
         </label>
         <input
           type="range"
           min="1"
           max="10"
-          value={value}
+          value={displayValue}
           onChange={e => onChange(name, parseInt(e.target.value))}
           className="survey-range"
           style={{
-            background: 'linear-gradient(to right, #14b8a6, #06b6d4, #0ea5e9)'
+            background: 'linear-gradient(to right, #14b8a6, #06b6d4, #0ea5e9)',
+            opacity: hasValue ? 1 : 0.4
           }}
         />
         <div className="survey-scale">
-          <span>{question.labels[value - 1]}</span>
-          <span className="survey-value">{value}/10</span>
+          <span style={{ color: hasValue ? 'inherit' : '#94a3b8' }}>
+            {hasValue ? question.labels[displayValue - 1] : 'Not selected yet'}
+          </span>
+          <span className="survey-value" style={{ opacity: hasValue ? 1 : 0.4 }}>
+            {displayValue}/10
+          </span>
         </div>
       </div>
     );
@@ -118,10 +145,11 @@ export default function WellnessSurvey() {
     return (
       <div className="survey-success">
         <h2>✅ Wellness Check Saved!</h2>
-        <button 
+        <button
           onClick={() => {
+            setShowSuccess(false);
             setSelectedPlayer("");
-            setValues({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
+            setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
           }}
           className="survey-button"
           style={{ backgroundColor: '#14b8a6' }}
@@ -162,11 +190,17 @@ export default function WellnessSurvey() {
         <select
           value={selectedPlayer}
           onChange={e => {
-            setSelectedPlayer(e.target.value);
-            if (responses[e.target.value]) {
-              setValues(responses[e.target.value]);
+            const playerName = e.target.value;
+            setSelectedPlayer(playerName);
+
+            // Always reset form fields to blank (privacy: don't show previous responses)
+            setValues({ sleep: null, fatigue: null, soreness: null, physioNotes: "" });
+
+            // Check if player has already submitted today (for info message only)
+            if (responses[playerName]) {
+              setError("ℹ️ You have already submitted today's wellness check. Submit again to update it.");
             } else {
-              setValues({ sleep: 5, fatigue: 5, soreness: 5, physioNotes: "" });
+              setError("");
             }
           }}
           className="survey-select"
@@ -203,9 +237,15 @@ export default function WellnessSurvey() {
 
         {error && <div className="survey-error">{error}</div>}
 
-        <button 
+        <button
           type="submit"
-          disabled={isSaving || !selectedPlayer}
+          disabled={
+            isSaving ||
+            !selectedPlayer ||
+            values.sleep === null ||
+            values.fatigue === null ||
+            values.soreness === null
+          }
           className="survey-submit"
           style={{ backgroundColor: '#14b8a6' }}
         >

@@ -1,4 +1,4 @@
-import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 class PracticeDataService {
@@ -87,6 +87,209 @@ class PracticeDataService {
         console.error('❌ Subscription error:', error);
       }
     );
+  };
+
+  syncSessionToPracticeLive = async (sessionId, metricsToSync) => {
+    if (!sessionId) {
+      throw new Error('Session ID is required for sync');
+    }
+
+    console.log('🔄 Syncing schedule metrics to PracticeLive:', {
+      sessionId,
+      metricsToSync
+    });
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+
+      // Map schedule metrics to PracticeLive structure
+      const plannedMetrics = {
+        totalTime: Number(metricsToSync.totalMinutes) || 0,
+        highIntensity: Number(metricsToSync.highIntensityMinutes) || 0,
+        courtsUsed: Number(metricsToSync.courts) || 0,
+        rpeCourt: Number(metricsToSync.rpeCourtPlanned) || 0,
+        rpeGym: Number(metricsToSync.rpeGymPlanned) || 0
+      };
+
+      // Prepare update data with default actual metrics
+      const updateData = {
+        metrics: {
+          planned: plannedMetrics,
+          actual: {
+            totalTime: 0,
+            highIntensity: 0,
+            courtsUsed: 0,
+            rpeCourt: 0,
+            rpeGym: 0
+          }
+        },
+        lastUpdated: serverTimestamp()
+      };
+
+      await setDoc(docRef, updateData, { merge: true });
+      console.log('✅ Successfully synced metrics to PracticeLive');
+
+      return updateData;
+    } catch (error) {
+      console.error('❌ Failed to sync metrics:', error);
+      throw error;
+    }
+  };
+
+  // Get practice data by sessionId
+  getPracticeData = async (sessionId) => {
+    if (!sessionId) {
+      console.warn('No sessionId provided to getPracticeData');
+      return null;
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        return docSnap.data();
+      } else {
+        console.log('No practice data found for session:', sessionId);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error getting practice data:', error);
+      throw error;
+    }
+  };
+
+  // Update court RPE survey response for a player
+  updateSurveyResponse = async (sessionId, playerName, surveyData) => {
+    if (!sessionId || !playerName) {
+      throw new Error('Session ID and player name are required');
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+
+      // Get existing data first
+      const docSnap = await getDoc(docRef);
+      const existingData = docSnap.exists() ? docSnap.data() : {};
+
+      // Merge the new survey response with existing survey data
+      const surveyDataObj = existingData.surveyData || {};
+      surveyDataObj[playerName] = {
+        ...surveyData,
+        timestamp: serverTimestamp()
+      };
+
+      await setDoc(docRef, {
+        surveyData: surveyDataObj,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+
+      console.log('✅ Court RPE survey response saved for', playerName);
+    } catch (error) {
+      console.error('Error saving court RPE survey response:', error);
+      throw error;
+    }
+  };
+
+  // Update gym RPE survey response for a player
+  updateGymSurveyResponse = async (sessionId, playerName, surveyData) => {
+    if (!sessionId || !playerName) {
+      throw new Error('Session ID and player name are required');
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+
+      // Get existing data first
+      const docSnap = await getDoc(docRef);
+      const existingData = docSnap.exists() ? docSnap.data() : {};
+
+      // Merge the new survey response with existing gym survey data
+      const gymSurveyDataObj = existingData.gymSurveyData || {};
+      gymSurveyDataObj[playerName] = {
+        ...surveyData,
+        timestamp: serverTimestamp()
+      };
+
+      await setDoc(docRef, {
+        gymSurveyData: gymSurveyDataObj,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+
+      console.log('✅ Gym RPE survey response saved for', playerName);
+    } catch (error) {
+      console.error('Error saving gym RPE survey response:', error);
+      throw error;
+    }
+  };
+
+  // Get court RPE survey data for a session
+  getSurveyData = async (sessionId) => {
+    if (!sessionId) {
+      console.warn('No sessionId provided to getSurveyData');
+      return null;
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        return data.surveyData || null;
+      } else {
+        console.log('No survey data found for session:', sessionId);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error getting survey data:', error);
+      return null; // Return null instead of throwing to prevent breaking the caller
+    }
+  };
+
+  // Get gym RPE survey data for a session
+  getGymSurveyData = async (sessionId) => {
+    if (!sessionId) {
+      console.warn('No sessionId provided to getGymSurveyData');
+      return null;
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        return data.gymSurveyData || null;
+      } else {
+        console.log('No gym survey data found for session:', sessionId);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error getting gym survey data:', error);
+      return null; // Return null instead of throwing to prevent breaking the caller
+    }
+  };
+
+  // Delete all practice data for a session
+  deletePracticeData = async (sessionId) => {
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      await deleteDoc(docRef);
+      console.log('✅ Practice data deleted for session:', sessionId);
+    } catch (error) {
+      console.error('Error deleting practice data:', error);
+      throw error;
+    }
+  };
+
+  // Sync schedule updates to practice (for backwards compatibility)
+  syncScheduleWithPractice = async (sessionId, sessionData) => {
+    return this.syncSessionToPracticeLive(sessionId, sessionData);
   };
 }
 

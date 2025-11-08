@@ -1760,7 +1760,7 @@ const updatePart = (sessionId, partId, field, value) => {
           <Link to="/" className="btn btn-secondary">
             Back to Game Minutes
           </Link>
-          <button 
+          <button
             className="btn btn-secondary"
             onClick={handleExportPDF}
             disabled={isExporting}
@@ -1782,6 +1782,22 @@ const updatePart = (sessionId, partId, field, value) => {
             }}
           >
             💪 Daily Wellness Check
+          </button>
+          <button
+            onClick={() => navigate('/rpe-report')}
+            className="btn btn-secondary"
+            style={{
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            📊 RPE Weekly Report
           </button>
         </div>
 

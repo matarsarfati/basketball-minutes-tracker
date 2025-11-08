@@ -58,23 +58,34 @@ const getPlannedRPEData = async (startDate, endDate) => {
 const getActualRPEData = async (startDate, endDate) => {
   try {
     const sessions = await scheduleService.getScheduleEvents();
-    const dateRangeSessions = sessions.filter(session => 
+    const dateRangeSessions = sessions.filter(session =>
       session.date >= startDate && session.date <= endDate
     );
 
     const rpeData = await Promise.all(
       dateRangeSessions.map(async session => {
         try {
-          const [courtSurvey, gymSurvey] = await Promise.all([
-            practiceDataService.getSurveyData(session.id),
-            practiceDataService.getGymSurveyData(session.id)
-          ]);
+          // Safely fetch survey data with error handling
+          let courtSurvey = null;
+          let gymSurvey = null;
+
+          try {
+            courtSurvey = await practiceDataService.getSurveyData(session.id);
+          } catch (courtError) {
+            console.warn(`Failed to fetch court survey for session ${session.id}:`, courtError);
+          }
+
+          try {
+            gymSurvey = await practiceDataService.getGymSurveyData(session.id);
+          } catch (gymError) {
+            console.warn(`Failed to fetch gym survey for session ${session.id}:`, gymError);
+          }
 
           const actualCourtRPE = calculateAverageRPE(courtSurvey);
           const actualGymRPE = calculateAverageRPE(gymSurvey);
-          
-          const courtResponseCount = courtSurvey ? Object.keys(courtSurvey).length : 0;
-          const gymResponseCount = gymSurvey ? Object.keys(gymSurvey).length : 0;
+
+          const courtResponseCount = (courtSurvey && typeof courtSurvey === 'object') ? Object.keys(courtSurvey).length : 0;
+          const gymResponseCount = (gymSurvey && typeof gymSurvey === 'object') ? Object.keys(gymSurvey).length : 0;
 
           return {
             date: session.date,
@@ -85,7 +96,7 @@ const getActualRPEData = async (startDate, endDate) => {
             gymResponseCount
           };
         } catch (error) {
-          console.error(`Error fetching RPE data for session ${session.id}:`, error);
+          console.error(`Error processing RPE data for session ${session.id}:`, error);
           return {
             date: session.date,
             actualCourtRPE: null,

@@ -11,6 +11,7 @@ import GymSurvey from './GymSurvey';
 import WellnessSurvey from './WellnessSurvey';
 import WellnessDashboard from './WellnessDashboard';
 import WellnessForm from './WellnessForm';
+import RPEWeeklyReport from './RPEWeeklyReport';
 
 const PracticeLive = lazy(() => import('./PracticeLive'));
 
@@ -46,6 +47,10 @@ const router = createBrowserRouter([
   {
     path: "/wellness/survey",
     element: <WellnessForm />
+  },
+  {
+    path: "/rpe-report",
+    element: <RPEWeeklyReport />
   },
   {
     element: <GymLayout />,
