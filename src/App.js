@@ -1,10 +1,10 @@
 // App.js – Minutes Tracker (fixed for createBrowserRouter)
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus } from 'lucide-react';
+import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus, RotateCcw, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import './App.css';
-import GymPage from './pages/GymPage'; // Update to use the new GymPage
+import { rosterService } from './services/rosterService';
 
 
 /* ==== Constants ==== */
@@ -42,13 +42,12 @@ function MinutesTracker() {
   const [gameStarted, setGameStarted] = useState(false);
   const [gameSpeed, setGameSpeed] = useState(1);
 
-  const [players, setPlayers] = useState([
-    { id: 1, name: 'Player 1', number: 4,  isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-    { id: 2, name: 'Player 2', number: 7,  isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-    { id: 3, name: 'Player 3', number: 11, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-    { id: 4, name: 'Player 4', number: 23, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-    { id: 5, name: 'Player 5', number: 33, isPlaying: false, totalMinutes: 0, currentSessionStart: 0, currentRestTime: 0, hasEverPlayed: false, playingSessions: [], showRestTime: true },
-  ]);
+  const [players, setPlayers] = useState([]);
+  const [isLoadingRoster, setIsLoadingRoster] = useState(true);
+
+  /* ==== Undo History ==== */
+  const [history, setHistory] = useState([]);
+  const MAX_HISTORY = 20; // Keep last 20 actions
 
   /* ==== Modal State ==== */
   const [showAddPlayer, setShowAddPlayer] = useState(false);
@@ -65,6 +64,72 @@ function MinutesTracker() {
   useEffect(() => {
     gameTimeRef.current = gameTime;
   }, [gameTime]);
+
+  /* ==== Load roster from Firestore ==== */
+  useEffect(() => {
+    const loadRoster = async () => {
+      try {
+        const firebasePlayers = await rosterService.getPlayers();
+
+        // Transform Firestore players to minutes tracker format
+        const transformedPlayers = firebasePlayers.map(fp => ({
+          id: fp.id,
+          name: fp.name,
+          number: parseInt(fp.number, 10),
+          isPlaying: false,
+          totalMinutes: 0,
+          currentSessionStart: 0,
+          currentRestTime: 0,
+          hasEverPlayed: false,
+          playingSessions: [],
+          showRestTime: true,
+          firebaseId: fp.firebaseId
+        }));
+
+        setPlayers(transformedPlayers);
+      } catch (error) {
+        console.error('Failed to load roster from Firestore:', error);
+        // Fallback to empty array - user can add players manually
+        setPlayers([]);
+      } finally {
+        setIsLoadingRoster(false);
+      }
+    };
+
+    loadRoster();
+  }, []);
+
+  /* ==== Helper: Save state to history ==== */
+  const saveToHistory = () => {
+    setHistory(prev => {
+      const newHistory = [...prev, { players: JSON.parse(JSON.stringify(players)), gameTime, currentQuarter }];
+      // Keep only last MAX_HISTORY items
+      return newHistory.slice(-MAX_HISTORY);
+    });
+  };
+
+  /* ==== Undo last action ==== */
+  const undoLastAction = () => {
+    if (history.length === 0) {
+      alert('No actions to undo');
+      return;
+    }
+
+    const lastState = history[history.length - 1];
+    setPlayers(lastState.players);
+    setGameTime(lastState.gameTime);
+    setCurrentQuarter(lastState.currentQuarter);
+    setHistory(prev => prev.slice(0, -1));
+  };
+
+  /* ==== Get players with >8 consecutive minutes ==== */
+  const getPlayersOverEightMinutes = () => {
+    return players.filter(p => {
+      if (!p.isPlaying) return false;
+      const consecutiveSeconds = p.currentSessionStart - gameTime;
+      return consecutiveSeconds > 480; // 8 minutes = 480 seconds
+    });
+  };
 
   /* ==== Main countdown timer ==== */
   useEffect(() => {
@@ -155,6 +220,9 @@ function MinutesTracker() {
   const changeGameSpeed = (speed) => setGameSpeed(speed);
 
   const putPlayerIn = (playerId) => {
+    // Save state before making substitution
+    saveToHistory();
+
     setPlayers((arr) =>
       arr.map((p) =>
         p.id === playerId
@@ -180,6 +248,9 @@ function MinutesTracker() {
   };
 
   const takePlayerOut = (playerId) => {
+    // Save state before making substitution
+    saveToHistory();
+
     setPlayers((arr) =>
       arr.map((p) => {
         if (p.id === playerId && p.isPlaying) {
@@ -237,30 +308,53 @@ function MinutesTracker() {
     );
   };
 
-  const addPlayer = () => {
+  const addPlayer = async () => {
     if (newPlayerName.trim() && newPlayerNumber.trim()) {
-      const newP = {
-        id: Date.now(),
-        name: newPlayerName.trim(),
-        number: parseInt(newPlayerNumber, 10),
-        isPlaying: false,
-        totalMinutes: 0,
-        currentSessionStart: 0,
-        currentRestTime: 0,
-        hasEverPlayed: false,
-        playingSessions: [],
-        showRestTime: true,
-      };
-      setPlayers((arr) => [...arr, newP]);
-      setNewPlayerName('');
-      setNewPlayerNumber('');
-      setShowAddPlayer(false);
+      try {
+        // Save to Firestore first
+        const firebaseId = await rosterService.addPlayer({
+          name: newPlayerName.trim(),
+          number: newPlayerNumber.trim()
+        });
+
+        // Then add to local state
+        const newP = {
+          id: firebaseId,
+          name: newPlayerName.trim(),
+          number: parseInt(newPlayerNumber, 10),
+          isPlaying: false,
+          totalMinutes: 0,
+          currentSessionStart: 0,
+          currentRestTime: 0,
+          hasEverPlayed: false,
+          playingSessions: [],
+          showRestTime: true,
+          firebaseId: firebaseId
+        };
+        setPlayers((arr) => [...arr, newP]);
+        setNewPlayerName('');
+        setNewPlayerNumber('');
+        setShowAddPlayer(false);
+      } catch (error) {
+        console.error('Failed to add player:', error);
+        alert('Failed to add player to roster. Please try again.');
+      }
     }
   };
 
-  const removePlayer = (playerId) => {
+  const removePlayer = async (playerId) => {
     if (window.confirm('Are you sure you want to remove this player?')) {
-      setPlayers((arr) => arr.filter((p) => p.id !== playerId));
+      try {
+        const player = players.find(p => p.id === playerId);
+        if (player?.firebaseId) {
+          await rosterService.deletePlayer(player.firebaseId);
+        }
+        setPlayers((arr) => arr.filter((p) => p.id !== playerId));
+      } catch (error) {
+        console.error('Failed to delete player from Firestore:', error);
+        // Still remove from local state even if Firestore delete fails
+        setPlayers((arr) => arr.filter((p) => p.id !== playerId));
+      }
     }
   };
 
@@ -284,6 +378,19 @@ function MinutesTracker() {
     setShowSessionHistory(true);
   };
 
+  const playersOverEight = getPlayersOverEightMinutes();
+
+  if (isLoadingRoster) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-xl font-semibold mb-2">Loading roster...</div>
+          <div className="text-gray-600">Fetching team data from Firestore</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="app-container">
@@ -305,7 +412,7 @@ function MinutesTracker() {
           </Link>
         </div>
 
-        <div className="max-w-6xl">
+        <div className="max-w-6xl" style={{ position: 'relative' }}>
           <div className="header">
             <Users className="header-icon" />
             <h1>Basketball Minutes Tracker</h1>
@@ -352,23 +459,106 @@ function MinutesTracker() {
 
           <div className="control-buttons">
             <button onClick={resetGame} className="reset-button">🔄 Reset Game</button>
+            <button
+              onClick={undoLastAction}
+              className="reset-button"
+              disabled={history.length === 0}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                opacity: history.length === 0 ? 0.5 : 1,
+                cursor: history.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <RotateCcw size={16} />
+              Undo ({history.length})
+            </button>
           </div>
 
+          {/* Alert Panel for Players Over 8 Minutes */}
+          {playersOverEight.length > 0 && (
+            <div style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              backgroundColor: '#fee2e2',
+              border: '2px solid #ef4444',
+              borderRadius: '0.5rem',
+              padding: '1rem',
+              maxWidth: '300px',
+              zIndex: 1000,
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: '#991b1b', fontWeight: 'bold' }}>
+                <AlertCircle size={20} />
+                <span>High Playing Time Alert</span>
+              </div>
+              <div style={{ fontSize: '0.875rem', color: '#7f1d1d' }}>
+                <div style={{ marginBottom: '0.5rem' }}>Players over 8 consecutive minutes:</div>
+                {playersOverEight.map(p => {
+                  const consecutiveTime = p.currentSessionStart - gameTime;
+                  return (
+                    <div key={p.id} style={{
+                      padding: '0.5rem',
+                      backgroundColor: 'white',
+                      borderRadius: '0.25rem',
+                      marginBottom: '0.5rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{ fontWeight: 600 }}>#{p.number} {p.name}</span>
+                      <span style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                        {formatTime(consecutiveTime)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="players-table-container">
-            <table className="players-table">
-              <thead className="table-header">
-                <tr>
-                  <th>#</th>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Total Time</th>
-                  <th>Playing Session</th>
-                  <th>Rest Session</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="table-body">
-                {players.map((p) => (
+            {players.length === 0 ? (
+              <div style={{
+                padding: '3rem 1rem',
+                textAlign: 'center',
+                backgroundColor: 'white',
+                borderRadius: '0.5rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+              }}>
+                <Users size={48} style={{ color: '#9ca3af', margin: '0 auto 1rem' }} />
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#374151' }}>
+                  No Players Found
+                </h3>
+                <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
+                  No players were loaded from the roster. Click "Manage Players" below to add players manually.
+                </p>
+                <button
+                  onClick={() => setShowAddPlayer(true)}
+                  className="half-time-button"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <UserPlus size={16} />
+                  Manage Players
+                </button>
+              </div>
+            ) : (
+              <table className="players-table">
+                <thead className="table-header">
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Total Time</th>
+                    <th>Playing Session</th>
+                    <th>Rest Session</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="table-body">
+                  {players.map((p) => (
                   <tr key={p.id} className="table-row">
                     <td className="table-cell">
                       <div className="player-number">#{p.number}</div>
@@ -418,10 +608,11 @@ function MinutesTracker() {
                         {p.isPlaying ? 'Out' : 'In'}
                       </button>
                     </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           <div style={{ marginTop: '1rem', textAlign: 'center' }}>
