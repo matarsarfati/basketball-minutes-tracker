@@ -395,6 +395,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
   const audioCtxRef = useRef(null);
   const triggerBeepRef = useRef(() => {});
+  const isSavingRef = useRef(false);
   const [surveyStore, setSurveyStore] = useState(() => getSurveyStore());
   const [quickRosterName, setQuickRosterName] = useState("");
   // Remove duplicate toastMessage state here
@@ -551,20 +552,31 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     return () => unsubscribe();
   }, [session?.id]);
 
-  // Update Firebase save effect with debounce and tracking
+  // Save to Firebase when data changes
   useEffect(() => {
     if (!session?.id || isInitialLoad || !isMetricsLoaded) {
+      console.log('⏸️ Skipping save:', {
+        hasSession: !!session?.id,
+        isInitialLoad,
+        isMetricsLoaded
+      });
       return;
     }
 
-    let isSaving = false;
-    console.log('💾 Planning save:', { metrics });
-    
+    if (isSavingRef.current) {
+      console.log('⏸️ Already saving, skipping...');
+      return;
+    }
+
+    console.log('💾 מתכנן שמירה ל-Firebase:', { metrics, drillRows: drillRows.length, attendance: Object.keys(attendance).length });
+
     const timeoutId = setTimeout(async () => {
-      if (isSaving) return;
-      
+      if (isSavingRef.current) return;
+
       try {
-        isSaving = true;
+        isSavingRef.current = true;
+        console.log('💾 שומר נתונים ל-Firebase...');
+
         await practiceDataService.savePracticeData(
           session.id,
           {
@@ -573,18 +585,19 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             attendance,
             surveyCompleted
           },
-          isInitialLoad
+          false // Not initial load
         );
-        isSaving = false;
+
+        console.log('✅ נתונים נשמרו בהצלחה ל-Firebase');
+        isSavingRef.current = false;
       } catch (error) {
-        console.error('Failed to save practice data:', error);
-        isSaving = false;
+        console.error('❌ שגיאה בשמירה ל-Firebase:', error);
+        isSavingRef.current = false;
       }
-    }, 500);
+    }, 1000); // Increased to 1 second to reduce excessive saves
 
     return () => {
       clearTimeout(timeoutId);
-      isSaving = false;
     };
   }, [session?.id, metrics, drillRows, attendance, surveyCompleted, isInitialLoad, isMetricsLoaded]);
 
@@ -1012,23 +1025,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }
   }, [session?.id, isRefreshing]);
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!session?.id) return;
-
-    const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
-    console.log('🔄 Setting up auto-refresh (30s interval)');
-
-    const intervalId = setInterval(() => {
-      console.log('🔄 Auto-refresh triggered');
-      handleManualRefresh();
-    }, AUTO_REFRESH_INTERVAL);
-
-    return () => {
-      console.log('🔄 Cleaning up auto-refresh');
-      clearInterval(intervalId);
-    };
-  }, [session?.id, handleManualRefresh]);
+  // Auto-refresh removed - only manual refresh via button
 
   const renderSurveyStatus = () => {
     const presentCount = Object.values(attendance)
