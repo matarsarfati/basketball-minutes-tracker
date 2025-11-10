@@ -316,6 +316,8 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     plannedCourts: "",
   });
   const [toastMessage, setToastMessage] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
 
   // 4. Initialize session-dependent state
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -494,11 +496,53 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             isFirst,
             metrics: practiceData.metrics
           });
-          
+
           setMetrics(practiceData.metrics);
           if (isFirst) {
             setIsMetricsLoaded(true);
             setIsInitialLoad(false);
+          }
+        }
+
+        // Handle court survey data updates
+        if (practiceData?.surveyData) {
+          console.log('📥 Updating court survey data:', {
+            responseCount: Object.keys(practiceData.surveyData).length
+          });
+
+          setSurveyData(practiceData.surveyData);
+
+          // Calculate and update averages
+          const responses = Object.values(practiceData.surveyData);
+          if (responses.length > 0) {
+            const totals = responses.reduce((acc, response) => ({
+              rpe: acc.rpe + (Number(response.rpe) || 0),
+              legs: acc.legs + (Number(response.legs) || 0)
+            }), { rpe: 0, legs: 0 });
+
+            setSurveyAverages({
+              rpe: Number((totals.rpe / responses.length).toFixed(1)),
+              legs: Number((totals.legs / responses.length).toFixed(1))
+            });
+          }
+        }
+
+        // Handle gym survey data updates
+        if (practiceData?.gymSurveyData) {
+          console.log('📥 Updating gym survey data:', {
+            responseCount: Object.keys(practiceData.gymSurveyData).length
+          });
+
+          setGymSurveyData(practiceData.gymSurveyData);
+
+          // Calculate and update gym averages
+          const responses = Object.values(practiceData.gymSurveyData);
+          if (responses.length > 0) {
+            const total = responses.reduce((acc, response) =>
+              acc + (Number(response.rpe) || 0), 0);
+            setGymSurveyAverages({
+              rpe: Number((total / responses.length).toFixed(1))
+            });
           }
         }
       }
@@ -550,7 +594,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         const data = await wellnessService.getTodayWellness();
         setWellnessData(data || {
           averages: { sleep: 0, fatigue: 0, soreness: 0 },
-          responses: {} 
+          responses: {}
         });
       } catch (error) {
         console.error('Failed to fetch wellness data:', error);
@@ -561,7 +605,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         });
       }
     };
-    
+
     fetchWellnessData();
   }, []);
 
@@ -743,16 +787,16 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     try {
       setToastMessage('Generating report...');
       validatePrePracticeData({ session, metrics, roster });
-      
+
       const freshWellnessData = await wellnessService.getTodayWellness();
-      
+
       if (!checkWellnessData(freshWellnessData)) {
         if (!window.confirm('No wellness survey responses available for today.\nWould you like to generate the report anyway?')) {
           setToastMessage('');
           return;
         }
       }
-      
+
       await generatePrePracticePDF({
         session,
         metrics,
@@ -764,7 +808,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         },
         roster
       });
-      
+
       setToastMessage('Report generated successfully ✓');
       setTimeout(() => setToastMessage(''), 3000);
     } catch (error) {
@@ -772,28 +816,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       setToastMessage(error.message || 'Failed to generate report.');
       setTimeout(() => setToastMessage(''), 5000);
     }
-  };
-
-  const renderSurveyStatus = () => {
-    if (!surveyData) return null;
-    const presentCount = Object.values(attendance)
-      .filter(record => record.present).length;
-    const responseCount = Object.keys(surveyData).length;
-
-    return (
-      <div className="mb-4 text-sm">
-        <p>
-          Survey Responses: {responseCount} of {presentCount} players
-          {responseCount === presentCount && ' ✓'}
-        </p>
-        {surveyAverages.rpe > 0 && (
-          <p>Team Averages: RPE {surveyAverages.rpe} • Legs {surveyAverages.legs}</p>
-        )}
-        {gymSurveyAverages.rpe > 0 && (
-          <p>Gym Averages: RPE {gymSurveyAverages.rpe}</p>
-        )}
-      </div>
-    );
   };
 
   const navigate = useNavigate();
@@ -873,6 +895,205 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         ...update
       }
     }));
+  };
+
+  const handleManualRefresh = useCallback(async () => {
+    if (!session?.id || isRefreshing) return;
+
+    setIsRefreshing(true);
+    console.log('🔄 סנכרון ידני התחיל - מושך נתונים מ-Firebase');
+
+    try {
+      // Fetch fresh data from Firebase
+      const freshData = await practiceDataService.getPracticeData(session.id);
+
+      if (freshData) {
+        console.log('📥 נתונים חדשים התקבלו מ-Firebase:', {
+          hasMetrics: !!freshData.metrics,
+          hasDrillRows: !!freshData.drillRows && freshData.drillRows.length > 0,
+          hasAttendance: !!freshData.attendance && Object.keys(freshData.attendance).length > 0,
+          hasSurveyData: !!freshData.surveyData && Object.keys(freshData.surveyData).length > 0,
+          hasGymSurveyData: !!freshData.gymSurveyData && Object.keys(freshData.gymSurveyData).length > 0,
+          surveyCompleted: freshData.surveyCompleted
+        });
+
+        let updatedFields = [];
+
+        // Update metrics if available
+        if (freshData.metrics) {
+          setMetrics(freshData.metrics);
+          updatedFields.push('מדדי תרגול');
+        }
+
+        // Update drill rows if available
+        if (freshData.drillRows) {
+          setDrillRows(freshData.drillRows);
+          if (freshData.drillRows.length > 0) {
+            updatedFields.push(`${freshData.drillRows.length} תרגילים`);
+          }
+        }
+
+        // Update attendance if available
+        if (freshData.attendance) {
+          setAttendance(freshData.attendance);
+          const presentCount = Object.values(freshData.attendance).filter(r => r.present).length;
+          if (presentCount > 0) {
+            updatedFields.push(`${presentCount} משתתפים`);
+          }
+        }
+
+        // Update survey completed status
+        if (typeof freshData.surveyCompleted === 'boolean') {
+          setSurveyCompleted(freshData.surveyCompleted);
+        }
+
+        // Update court survey data
+        if (freshData.surveyData) {
+          setSurveyData(freshData.surveyData);
+
+          // Recalculate averages
+          const responses = Object.values(freshData.surveyData);
+          if (responses.length > 0) {
+            const totals = responses.reduce((acc, response) => ({
+              rpe: acc.rpe + (Number(response.rpe) || 0),
+              legs: acc.legs + (Number(response.legs) || 0)
+            }), { rpe: 0, legs: 0 });
+
+            setSurveyAverages({
+              rpe: Number((totals.rpe / responses.length).toFixed(1)),
+              legs: Number((totals.legs / responses.length).toFixed(1))
+            });
+            updatedFields.push(`${responses.length} סקרי מגרש`);
+          }
+        } else {
+          // Reset survey data if not present
+          setSurveyData(null);
+          setSurveyAverages({ rpe: 0, legs: 0 });
+        }
+
+        // Update gym survey data
+        if (freshData.gymSurveyData) {
+          setGymSurveyData(freshData.gymSurveyData);
+
+          // Recalculate gym averages
+          const responses = Object.values(freshData.gymSurveyData);
+          if (responses.length > 0) {
+            const total = responses.reduce((acc, response) =>
+              acc + (Number(response.rpe) || 0), 0);
+            setGymSurveyAverages({
+              rpe: Number((total / responses.length).toFixed(1))
+            });
+            updatedFields.push(`${responses.length} סקרי כושר`);
+          }
+        } else {
+          // Reset gym survey data if not present
+          setGymSurveyData(null);
+          setGymSurveyAverages({ rpe: 0 });
+        }
+
+        setLastSyncTime(new Date());
+        const updateMessage = updatedFields.length > 0
+          ? `✓ סונכרן: ${updatedFields.join(', ')}`
+          : '✓ הנתונים מעודכנים';
+        setToastMessage(updateMessage);
+        console.log('✅ סנכרון הושלם בהצלחה:', updatedFields.join(', '));
+        setTimeout(() => setToastMessage(''), 4000);
+      } else {
+        console.warn('⚠️ לא נמצאו נתונים ב-Firebase עבור אימון:', session.id);
+        setToastMessage('⚠️ לא נמצאו נתונים ב-Firebase');
+        setTimeout(() => setToastMessage(''), 3000);
+      }
+    } catch (error) {
+      console.error('❌ שגיאה בסנכרון:', error);
+      setToastMessage('❌ שגיאה בסנכרון. נסה שוב.');
+      setTimeout(() => setToastMessage(''), 5000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [session?.id, isRefreshing]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!session?.id) return;
+
+    const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
+    console.log('🔄 Setting up auto-refresh (30s interval)');
+
+    const intervalId = setInterval(() => {
+      console.log('🔄 Auto-refresh triggered');
+      handleManualRefresh();
+    }, AUTO_REFRESH_INTERVAL);
+
+    return () => {
+      console.log('🔄 Cleaning up auto-refresh');
+      clearInterval(intervalId);
+    };
+  }, [session?.id, handleManualRefresh]);
+
+  const renderSurveyStatus = () => {
+    const presentCount = Object.values(attendance)
+      .filter(record => record.present).length;
+    const courtResponseCount = Object.keys(surveyData || {}).length;
+    const gymResponseCount = Object.keys(gymSurveyData || {}).length;
+
+    return (
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm">
+            <p className="font-medium">
+              Survey Responses: {courtResponseCount} of {presentCount} players
+              {courtResponseCount === presentCount && ' ✓'}
+            </p>
+            {surveyAverages.rpe > 0 && (
+              <p className="text-gray-600">Team Averages: RPE {surveyAverages.rpe} • Legs {surveyAverages.legs}</p>
+            )}
+            {gymSurveyAverages.rpe > 0 && (
+              <p className="text-gray-600">Gym Averages: RPE {gymSurveyAverages.rpe}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            {lastSyncTime && (
+              <span className="text-xs text-gray-500">
+                Last synced: {lastSyncTime.toLocaleTimeString('he-IL', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+            )}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors
+                ${isRefreshing
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                }
+              `}
+              title="Sync data from Firebase"
+            >
+              {isRefreshing ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>מסנכרן...</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                  </svg>
+                  <span>רענן נתונים</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const formatSessionTime = (session) => {

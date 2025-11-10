@@ -137,6 +137,29 @@ const globalStyles = `
     border: 1px solid var(--tile-accent, transparent);
   }
 
+  .cal-tile--meeting {
+    min-height: 36px;
+    padding: 3px;
+  }
+
+  .cal-tile--meeting .cal-tile-row {
+    gap: 3px;
+  }
+
+  .cal-tile--meeting .cal-time {
+    font-size: 10px;
+  }
+
+  .cal-tile--meeting .cal-badge {
+    font-size: 9px;
+    padding: 1px 3px;
+  }
+
+  .cal-tile--meeting .cal-title {
+    font-size: 10px;
+    margin-top: 0;
+  }
+
   .cal-tile-row {
     display: flex;
     align-items: center;
@@ -1031,10 +1054,18 @@ export default function SchedulePlanner() {
       return;
     }
     const slotValue = slot || slotOf(normalizedStart);
-    const exists = sessions.some(session => session.date === date && session.slot === slotValue);
-    if (exists) {
-      alert(`A ${slotValue} session already exists for ${date}.`);
-      return;
+
+    // Allow meetings to coexist with other sessions
+    if (type !== "Meeting") {
+      const exists = sessions.some(
+        session => session.date === date &&
+        session.slot === slotValue &&
+        session.type !== "Meeting"
+      );
+      if (exists) {
+        alert(`A ${slotValue} session already exists for ${date}.`);
+        return;
+      }
     }
 
     const newSession = {
@@ -1418,7 +1449,8 @@ const updatePart = (sessionId, partId, field, value) => {
 
   const renderSessionTile = (session, dateISO) => {
     const { totalMinutes, highMinutes, courts, rpeCourtPlanned, rpeGymPlanned } = getSessionMetrics(session);
-    const showStats = session.type !== "DayOff" && session.type !== "Game";
+    const isMeeting = session.type === "Meeting";
+    const showStats = session.type !== "DayOff" && session.type !== "Game" && !isMeeting;
     const showTime = session.type !== "DayOff";
     const timeText = formatTime(session.startTime);
     const palette = paletteForType(session.type);
@@ -1432,6 +1464,41 @@ const updatePart = (sessionId, partId, field, value) => {
       event.stopPropagation();
       openDetails(session.id);
     };
+
+    // Special compact layout for Meeting type
+    if (isMeeting) {
+      return (
+        <button
+          key={session.id}
+          type="button"
+          className="cal-tile cal-tile--meeting"
+          onClick={handleClick}
+          aria-label={ariaLabel}
+          style={{
+            '--tile-accent': palette.color,
+            backgroundColor: palette.background,
+          }}
+        >
+          <div className="cal-tile-row">
+            <span className="cal-time">{timeText}</span>
+            <span
+              className="cal-badge"
+              style={{
+                backgroundColor: palette.background,
+                color: palette.color
+              }}
+            >
+              MEETING
+            </span>
+          </div>
+          {title !== "Meeting" && (
+            <div className="cal-title" title={title}>
+              {title}
+            </div>
+          )}
+        </button>
+      );
+    }
 
     return (
       <button
@@ -1447,11 +1514,11 @@ const updatePart = (sessionId, partId, field, value) => {
       >
         <div className="cal-tile-row">
           {showTime && <span className="cal-time">{timeText}</span>}
-          <span 
-            className="cal-badge" 
-            style={{ 
-              backgroundColor: palette.background, 
-              color: palette.color 
+          <span
+            className="cal-badge"
+            style={{
+              backgroundColor: palette.background,
+              color: palette.color
             }}
           >
             {typeLabel}
@@ -2002,106 +2069,110 @@ const updatePart = (sessionId, partId, field, value) => {
               </div>
             </div>
 
-            <div className="details-stats">
-              <div className="details-stat">
-                <span className="details-stat__label">Total</span>
-                <input
-                  type="number"
-                  value={selectedSession.totalMinutes || 0}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    mutateSession(selectedSession.id, session => ({
-                      ...session,
-                      totalMinutes: value === "" ? 0 : Number(value)
-                    }));
-                  }}
-                  className="details-stat__input"
-                  min="0"
-                />
-                <span className="details-stat__unit">min</span>
-              </div>
-              <div className="details-stat">
-                <span className="details-stat__label">High Intensity</span>
-                <input
-                  type="number"
-                  value={selectedSession.highIntensityMinutes || 0}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    mutateSession(selectedSession.id, session => ({
-                      ...session,
-                      highIntensityMinutes: value === "" ? 0 : Number(value)
-                    }));
-                  }}
-                  className="details-stat__input"
-                  min="0"
-                />
-                <span className="details-stat__unit">min</span>
-              </div>
-              <div className="details-stat">
-                <span className="details-stat__label">Courts</span>
-                <input
-                  type="number"
-                  value={selectedSession.courts || 0}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    mutateSession(selectedSession.id, session => ({
-                      ...session,
-                      courts: value === "" ? 0 : Number(value)
-                    }));
-                  }}
-                  className="details-stat__input"
-                  min="0"
-                />
-              </div>
-              <div className="details-stat">
-                <span className="details-stat__label">Court RPE</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={selectedSession.rpeCourtPlanned || 0}
-                  onChange={e => {
-                    mutateSession(selectedSession.id, session => ({
-                      ...session,
-                      rpeCourtPlanned: Number(e.target.value) || 0
-                    }));
-                  }}
-                  className="details-stat__input"
-                />
-                <span className="details-stat__unit">/10</span>
-              </div>
+            {selectedSession.type !== "Meeting" && (
+              <>
+                <div className="details-stats">
+                  <div className="details-stat">
+                    <span className="details-stat__label">Total</span>
+                    <input
+                      type="number"
+                      value={selectedSession.totalMinutes || 0}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        mutateSession(selectedSession.id, session => ({
+                          ...session,
+                          totalMinutes: value === "" ? 0 : Number(value)
+                        }));
+                      }}
+                      className="details-stat__input"
+                      min="0"
+                    />
+                    <span className="details-stat__unit">min</span>
+                  </div>
+                  <div className="details-stat">
+                    <span className="details-stat__label">High Intensity</span>
+                    <input
+                      type="number"
+                      value={selectedSession.highIntensityMinutes || 0}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        mutateSession(selectedSession.id, session => ({
+                          ...session,
+                          highIntensityMinutes: value === "" ? 0 : Number(value)
+                        }));
+                      }}
+                      className="details-stat__input"
+                      min="0"
+                    />
+                    <span className="details-stat__unit">min</span>
+                  </div>
+                  <div className="details-stat">
+                    <span className="details-stat__label">Courts</span>
+                    <input
+                      type="number"
+                      value={selectedSession.courts || 0}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        mutateSession(selectedSession.id, session => ({
+                          ...session,
+                          courts: value === "" ? 0 : Number(value)
+                        }));
+                      }}
+                      className="details-stat__input"
+                      min="0"
+                    />
+                  </div>
+                  <div className="details-stat">
+                    <span className="details-stat__label">Court RPE</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      step="0.5"
+                      value={selectedSession.rpeCourtPlanned || 0}
+                      onChange={e => {
+                        mutateSession(selectedSession.id, session => ({
+                          ...session,
+                          rpeCourtPlanned: Number(e.target.value) || 0
+                        }));
+                      }}
+                      className="details-stat__input"
+                    />
+                    <span className="details-stat__unit">/10</span>
+                  </div>
 
-              <div className="details-stat">
-                <span className="details-stat__label">Gym RPE</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={selectedSession.rpeGymPlanned || 0}
-                  onChange={e => {
-                    mutateSession(selectedSession.id, session => ({
-                      ...session,
-                      rpeGymPlanned: Number(e.target.value) || 0
-                    }));
-                  }}
-                  className="details-stat__input"
-                />
-                <span className="details-stat__unit">/10</span>
-              </div>
-            </div>
+                  <div className="details-stat">
+                    <span className="details-stat__label">Gym RPE</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="10"
+                      step="0.5"
+                      value={selectedSession.rpeGymPlanned || 0}
+                      onChange={e => {
+                        mutateSession(selectedSession.id, session => ({
+                          ...session,
+                          rpeGymPlanned: Number(e.target.value) || 0
+                        }));
+                      }}
+                      className="details-stat__input"
+                    />
+                    <span className="details-stat__unit">/10</span>
+                  </div>
+                </div>
 
-            <div className="mt-4 flex justify-end">
-              <button 
-                onClick={() => handleSyncToPracticeLive(selectedSession)}
-                disabled={isSyncing}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-              >
-                <span>🔄</span>
-                <span>{isSyncing ? 'Syncing...' : 'Sync to PracticeLive'}</span>
-              </button>
-            </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={() => handleSyncToPracticeLive(selectedSession)}
+                    disabled={isSyncing}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    <span>🔄</span>
+                    <span>{isSyncing ? 'Syncing...' : 'Sync to PracticeLive'}</span>
+                  </button>
+                </div>
+              </>
+            )}
 
             <div className="details-notes-edit" style={{ marginTop: '20px' }}>
               <label className="schedule-section-title" htmlFor="details-notes">
@@ -2122,45 +2193,57 @@ const updatePart = (sessionId, partId, field, value) => {
               />
             </div>
 
-            <div className="details-section">
-              <button
-                type="button"
-                className="details-section__toggle"
-                onClick={() => setTrainingExpanded(prev => !prev)}
-                aria-expanded={trainingExpanded}
-              >
-                Training Plan
-                <span className="details-section__icon">{trainingExpanded ? "−" : "+"}</span>
-              </button>
-              {trainingExpanded && (
-                <div className="details-plan">
-                  {selectedSession.parts.length === 0 ? (
-                    <p className="details-plan__empty">No drills added yet.</p>
-                  ) : (
-                    <ul className="details-plan__list">
-                      {selectedSession.parts.map(part => (
-                        <li key={part.id} className="details-plan__item">
-                          <span className="details-plan__name">{part.label || "Untitled"}</span>
-                          <span className="details-plan__meta">
-                            {`${part.minutes || 0}m • ${part.highIntensity ? "High" : "Standard"}`}
-                          </span>
-                          {part.notes && <span className="details-plan__notes">{part.notes}</span>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
+            {selectedSession.type !== "Meeting" && (
+              <div className="details-section">
+                <button
+                  type="button"
+                  className="details-section__toggle"
+                  onClick={() => setTrainingExpanded(prev => !prev)}
+                  aria-expanded={trainingExpanded}
+                >
+                  Training Plan
+                  <span className="details-section__icon">{trainingExpanded ? "−" : "+"}</span>
+                </button>
+                {trainingExpanded && (
+                  <div className="details-plan">
+                    {selectedSession.parts.length === 0 ? (
+                      <p className="details-plan__empty">No drills added yet.</p>
+                    ) : (
+                      <ul className="details-plan__list">
+                        {selectedSession.parts.map(part => (
+                          <li key={part.id} className="details-plan__item">
+                            <span className="details-plan__name">{part.label || "Untitled"}</span>
+                            <span className="details-plan__meta">
+                              {`${part.minutes || 0}m • ${part.highIntensity ? "High" : "Standard"}`}
+                            </span>
+                            {part.notes && <span className="details-plan__notes">{part.notes}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="details-actions">
-              <Link
-                to={`/practice/${selectedSession.id}`}
-                className="btn btn-primary"
-                onClick={closeDetails}
-              >
-                Start Live
-              </Link>
+              {selectedSession.type === "Meeting" ? (
+                <Link
+                  to={`/meeting/${selectedSession.id}`}
+                  className="btn btn-primary"
+                  onClick={closeDetails}
+                >
+                  Open Meeting Protocol
+                </Link>
+              ) : (
+                <Link
+                  to={`/practice/${selectedSession.id}`}
+                  className="btn btn-primary"
+                  onClick={closeDetails}
+                >
+                  Start Live
+                </Link>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary"

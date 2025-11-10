@@ -5,6 +5,7 @@
   "dependencies": {
     "@firebase/storage": "^0.14.0",
     "@fontsource/heebo": "^5.2.8",
+    "@hello-pangea/dnd": "^18.0.1",
     "@supabase/supabase-js": "^2.75.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",

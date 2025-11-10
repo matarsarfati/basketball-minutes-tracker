@@ -3,6 +3,7 @@ import { db } from '../config/firebase';
 
 class PracticeDataService {
   lastSaveTimestamp = null;
+  deviceId = `device-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
   savePracticeData = async (sessionId, data, isInitialLoad = false) => {
     if (isInitialLoad) {
@@ -42,8 +43,17 @@ class PracticeDataService {
         attendance: data.attendance || {},
         surveyCompleted: data.surveyCompleted || false,
         lastUpdated: serverTimestamp(),
-        clientTimestamp: saveTimestamp
+        clientTimestamp: saveTimestamp,
+        deviceId: this.deviceId
       };
+
+      // Only include survey data if it exists (to avoid overwriting with empty objects)
+      if (data.surveyData && Object.keys(data.surveyData).length > 0) {
+        normalized.surveyData = data.surveyData;
+      }
+      if (data.gymSurveyData && Object.keys(data.gymSurveyData).length > 0) {
+        normalized.gymSurveyData = data.gymSurveyData;
+      }
 
       await setDoc(docRef, normalized, { merge: true });
       console.log('✅ Save successful');
@@ -70,14 +80,19 @@ class PracticeDataService {
       (docSnap) => {
         const data = docSnap.data();
 
-        if (data?.clientTimestamp === this.lastSaveTimestamp) {
+        // Only skip if this is our own device's recent save
+        if (data?.deviceId === this.deviceId &&
+            data?.clientTimestamp === this.lastSaveTimestamp) {
           console.log('📥 Skipping own update');
           return;
         }
 
         console.log('📥 Received practice data:', {
           isFirstLoad,
-          hasMetrics: !!data?.metrics
+          hasMetrics: !!data?.metrics,
+          hasSurveyData: !!data?.surveyData,
+          hasGymSurveyData: !!data?.gymSurveyData,
+          fromDevice: data?.deviceId
         });
 
         callback(data, isFirstLoad);
@@ -181,7 +196,9 @@ class PracticeDataService {
 
       await setDoc(docRef, {
         surveyData: surveyDataObj,
-        lastUpdated: serverTimestamp()
+        lastUpdated: serverTimestamp(),
+        clientTimestamp: Date.now(),
+        deviceId: `survey-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       }, { merge: true });
 
       console.log('✅ Court RPE survey response saved for', playerName);
@@ -213,7 +230,9 @@ class PracticeDataService {
 
       await setDoc(docRef, {
         gymSurveyData: gymSurveyDataObj,
-        lastUpdated: serverTimestamp()
+        lastUpdated: serverTimestamp(),
+        clientTimestamp: Date.now(),
+        deviceId: `gym-survey-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
       }, { merge: true });
 
       console.log('✅ Gym RPE survey response saved for', playerName);
