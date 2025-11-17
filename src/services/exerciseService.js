@@ -81,10 +81,10 @@ export const uploadExerciseImage = async (file, exerciseId) => {
   try {
     const fileName = exerciseId ? `${exerciseId}-${file.name}` : `${Date.now()}-${file.name}`;
     const storageRef = ref(storage, `exercise-images/${fileName}`);
-    
+
     await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(storageRef);
-    
+
     console.log('✅ Image uploaded to Firebase:', downloadURL);
     return downloadURL;
   } catch (error) {

@@ -552,54 +552,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     return () => unsubscribe();
   }, [session?.id]);
 
-  // Save to Firebase when data changes
-  useEffect(() => {
-    if (!session?.id || isInitialLoad || !isMetricsLoaded) {
-      console.log('⏸️ Skipping save:', {
-        hasSession: !!session?.id,
-        isInitialLoad,
-        isMetricsLoaded
-      });
-      return;
-    }
-
-    if (isSavingRef.current) {
-      console.log('⏸️ Already saving, skipping...');
-      return;
-    }
-
-    console.log('💾 מתכנן שמירה ל-Firebase:', { metrics, drillRows: drillRows.length, attendance: Object.keys(attendance).length });
-
-    const timeoutId = setTimeout(async () => {
-      if (isSavingRef.current) return;
-
-      try {
-        isSavingRef.current = true;
-        console.log('💾 שומר נתונים ל-Firebase...');
-
-        await practiceDataService.savePracticeData(
-          session.id,
-          {
-            metrics,
-            drillRows,
-            attendance,
-            surveyCompleted
-          },
-          false // Not initial load
-        );
-
-        console.log('✅ נתונים נשמרו בהצלחה ל-Firebase');
-        isSavingRef.current = false;
-      } catch (error) {
-        console.error('❌ שגיאה בשמירה ל-Firebase:', error);
-        isSavingRef.current = false;
-      }
-    }, 1000); // Increased to 1 second to reduce excessive saves
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [session?.id, metrics, drillRows, attendance, surveyCompleted, isInitialLoad, isMetricsLoaded]);
+  // Removed automatic Firebase save - only save via manual button click or on exit
 
   useEffect(() => {
     const fetchWellnessData = async () => {
@@ -910,6 +863,39 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }));
   };
 
+  const handleManualSave = useCallback(async () => {
+    if (!session?.id || isSavingRef.current) return;
+
+    isSavingRef.current = true;
+    setToastMessage('💾 שומר נתונים ל-Firebase...');
+
+    try {
+      await practiceDataService.savePracticeData(
+        session.id,
+        {
+          metrics,
+          drillRows,
+          attendance,
+          surveyData,
+          gymSurveyData,
+          surveyCompleted
+        },
+        false
+      );
+
+      setLastSyncTime(new Date());
+      setToastMessage('✓ הנתונים נשמרו בהצלחה ל-Firebase');
+      console.log('✅ שמירה ידנית הושלמה בהצלחה');
+      setTimeout(() => setToastMessage(''), 3000);
+    } catch (error) {
+      console.error('❌ שגיאה בשמירה:', error);
+      setToastMessage('❌ שגיאה בשמירה. נסה שוב.');
+      setTimeout(() => setToastMessage(''), 5000);
+    } finally {
+      isSavingRef.current = false;
+    }
+  }, [session?.id, metrics, drillRows, attendance, surveyData, gymSurveyData, surveyCompleted]);
+
   const handleManualRefresh = useCallback(async () => {
     if (!session?.id || isRefreshing) return;
 
@@ -978,10 +964,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             });
             updatedFields.push(`${responses.length} סקרי מגרש`);
           }
-        } else {
-          // Reset survey data if not present
-          setSurveyData(null);
-          setSurveyAverages({ rpe: 0, legs: 0 });
         }
 
         // Update gym survey data
@@ -998,10 +980,6 @@ function PracticeLive({ sessionId: sessionIdProp }) {
             });
             updatedFields.push(`${responses.length} סקרי כושר`);
           }
-        } else {
-          // Reset gym survey data if not present
-          setGymSurveyData(null);
-          setGymSurveyAverages({ rpe: 0 });
         }
 
         setLastSyncTime(new Date());
@@ -1059,6 +1037,23 @@ function PracticeLive({ sessionId: sessionIdProp }) {
               </span>
             )}
             <button
+              onClick={handleManualSave}
+              disabled={isSavingRef.current}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors
+                ${isSavingRef.current
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }
+              `}
+              title="שמור נתונים ל-Firebase"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
+              </svg>
+              <span>שמור ל-Firebase</span>
+            </button>
+            <button
               onClick={handleManualRefresh}
               disabled={isRefreshing}
               className={`
@@ -1068,7 +1063,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                   : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                 }
               `}
-              title="Sync data from Firebase"
+              title="משוך נתונים מ-Firebase"
             >
               {isRefreshing ? (
                 <>
