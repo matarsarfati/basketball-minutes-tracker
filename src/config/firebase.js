@@ -3,22 +3,16 @@ import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/fi
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDckY0Pvs1Z8uheDEQ26KhixIR-g6fsuWs",
-  authDomain: "basketball-eda67.firebaseapp.com",
-  projectId: "basketball-eda67",
-  storageBucket: "basketball-eda67.firebasestorage.app",
-  messagingSenderId: "877731431491",
-  appId: "1:877731431491:web:e77dcf6a596455e3bdc0f6",
-  measurementId: "G-NG04R1WVBH"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
-
-// Use memory cache instead of persistent
-const db = initializeFirestore(app, {
-  localCache: memoryLocalCache()
-});
-
+const db = initializeFirestore(app, { localCache: memoryLocalCache() });
 const storage = getStorage(app);
 
 export { app, db, storage };
