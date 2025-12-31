@@ -278,32 +278,26 @@ const getCurrentMonthRange = () => {
 };
 
 const getMonthDays = activeDate => {
-  // Find today's date in UTC
-  const today = parseISODateToUTC(getTodayISO());
-  
-  // Find the Sunday that starts the week containing today
-  const currentWeekSunday = createUTCDate(
-    today.getUTCFullYear(),
-    today.getUTCMonth(),
-    today.getUTCDate() - today.getUTCDay()
+  // Use the activeDate (viewMonth) to determine which month to display
+  const monthStart = startOfMonthUTC(activeDate);
+
+  // Find the first day to display (Sunday of the week containing the 1st)
+  const firstDayOfMonth = monthStart.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
+  const calendarStart = createUTCDate(
+    monthStart.getUTCFullYear(),
+    monthStart.getUTCMonth(),
+    monthStart.getUTCDate() - firstDayOfMonth
   );
-  
-  // Go back 2 weeks (14 days) from the start of current week
-  const startDate = createUTCDate(
-    currentWeekSunday.getUTCFullYear(),
-    currentWeekSunday.getUTCMonth(),
-    currentWeekSunday.getUTCDate() - 14
-  );
-  
-  const startISO = toISODate(startDate);
+
+  const startISO = toISODate(calendarStart);
   const days = [];
-  
-  // Generate 42 days (6 weeks) starting from 2 weeks before current week
+
+  // Generate 42 days (6 weeks) to fill the calendar grid
   for (let index = 0; index < 42; index += 1) {
     const iso = index === 0 ? startISO : addDaysToISO(startISO, index);
     days.push(parseISODateToUTC(iso));
   }
-  
+
   return days;
 };
 

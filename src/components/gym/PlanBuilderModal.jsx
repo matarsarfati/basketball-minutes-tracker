@@ -1,26 +1,52 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+
+import html2canvas from 'html2canvas'; // Import html2canvas
+import VideoPlayerModal from '../common/VideoPlayerModal'; // Import Video Player
+
+// Updated colors with thicker/darker borders
+const EXERCISE_COLORS = [
+  { id: 'default', bg: 'bg-white', border: 'border-gray-300', label: 'Default' },
+  { id: 'red', bg: 'bg-red-50', border: 'border-red-500', label: 'Red (Center)' },
+  { id: 'blue', bg: 'bg-blue-50', border: 'border-blue-500', label: 'Blue (Guard)' },
+  { id: 'green', bg: 'bg-green-50', border: 'border-green-500', label: 'Green' },
+  { id: 'yellow', bg: 'bg-yellow-50', border: 'border-yellow-500', label: 'Yellow' }
+];
+
+const ColorPicker = ({ value, onChange }) => (
+  <div className="flex gap-2 mt-2 justify-center">
+    {EXERCISE_COLORS.map(color => (
+      <button
+        key={color.id}
+        onClick={() => onChange(color.id)}
+        className={`w-6 h-6 rounded-full border-2 ${color.bg.replace('50', '200')} ${value === color.id ? 'ring-2 ring-offset-1 ring-gray-600' : ''
+          }`}
+        title={color.label}
+        type="button"
+      />
+    ))}
+  </div>
+);
 
 const CompactRepTypeSelect = ({ value, onChange, disabled }) => (
-  <select 
-    value={value} 
+  <select
+    value={value}
     onChange={(e) => onChange(e.target.value)}
-    className="plan-select"
+    className="plan-select flex-1 min-w-[60px]"
     disabled={disabled}
   >
     <option value="reps">reps</option>
-    <option value="per side">per side</option>
+    <option value="per side">/side</option>
     <option value="sec">sec</option>
   </select>
 );
 
-const PlanBuilderModal = ({ 
-  isOpen, 
-  onClose, 
-  plan, 
-  onUpdatePlan, 
-  isEditMode, 
+const PlanBuilderModal = ({
+  isOpen,
+  onClose,
+  plan,
+  onUpdatePlan,
+  isEditMode,
   onToggleEditMode,
   exercises,
   onAddExercise,
@@ -31,7 +57,7 @@ const PlanBuilderModal = ({
   onSave,
   isActive,
   onActivate,
-  onRenamePlan // Add new prop for renaming the plan
+  onRenamePlan
 }) => {
   const [position, setPosition] = useState(
     initialPosition || { x: window.innerWidth - 520, y: 20 }
@@ -42,12 +68,13 @@ const PlanBuilderModal = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizeDirection, setResizeDirection] = useState(null);
   const [isMaximized, setIsMaximized] = useState(false);
-  const previousSize = useRef(null); // Store previous size and position for restore
+  const previousSize = useRef(null);
   const contentRef = useRef(null);
   const [draggedIndex, setDraggedIndex] = useState(null);
-  const printRef = useRef(null);
-  const [isPrintMode, setIsPrintMode] = useState(false);
-  const [activeSection, setActiveSection] = useState(0); // Track the active section
+  // Removed Print refs/state
+  const [isTVMode, setIsTVMode] = useState(false);
+  const [playingVideoUrl, setPlayingVideoUrl] = useState(null); // Video state
+  const [activeSection, setActiveSection] = useState(0);
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(planName);
   const nameInputRef = useRef(null);
@@ -77,8 +104,8 @@ const PlanBuilderModal = ({
     const newHeight = e.clientY - resizeRef.current.getBoundingClientRect().top;
 
     setSize({
-      width: Math.max(400, newWidth), // Minimum width
-      height: Math.max(300, newHeight) // Minimum height
+      width: Math.max(400, newWidth),
+      height: Math.max(300, newHeight)
     });
   }, []);
 
@@ -96,6 +123,7 @@ const PlanBuilderModal = ({
 
   const handleMouseMove = useCallback((e) => {
     if (isDragging) {
+      if (isTVMode) return;
       setPosition({
         x: Math.max(0, Math.min(window.innerWidth - size.width, e.clientX - dragOffset.x)),
         y: Math.max(0, Math.min(window.innerHeight - size.height, e.clientY - dragOffset.y))
@@ -109,19 +137,19 @@ const PlanBuilderModal = ({
       const maxHeight = window.innerHeight * 0.9;
 
       setSize(prev => ({
-        width: Math.min(maxWidth, Math.max(minWidth, 
+        width: Math.min(maxWidth, Math.max(minWidth,
           resizeDirection.includes('e') ? prev.width + deltaX :
-          resizeDirection.includes('w') ? prev.width - deltaX : prev.width
+            resizeDirection.includes('w') ? prev.width - deltaX : prev.width
         )),
         height: Math.min(maxHeight, Math.max(minHeight,
           resizeDirection.includes('s') ? prev.height + deltaY :
-          resizeDirection.includes('n') ? prev.height - deltaY : prev.height
+            resizeDirection.includes('n') ? prev.height - deltaY : prev.height
         ))
       }));
 
       setDragOffset({ x: e.clientX, y: e.clientY });
     }
-  }, [isDragging, isResizing, dragOffset, resizeDirection, size]);
+  }, [isDragging, isResizing, dragOffset, resizeDirection, size, isTVMode]);
 
   const handleMouseUp = () => {
     setIsDragging(false);
@@ -140,28 +168,57 @@ const PlanBuilderModal = ({
   }, [isDragging, isResizing, handleMouseMove]);
 
   useEffect(() => {
-    // Add default section if plan is empty
     if (plan.length === 0) {
-      onUpdatePlan([{ type: 'break', title: 'Section 1' }]);
+      onUpdatePlan([{ type: 'break', title: 'Start' }]);
     }
-    // Add initial section break if plan starts with exercises
     else if (plan.length > 0 && plan[0].type !== 'break') {
-      onUpdatePlan([{ type: 'break', title: 'Section 1' }, ...plan]);
+      onUpdatePlan([{ type: 'break', title: 'Start' }, ...plan]);
     }
   }, []);
 
   const addRowBreak = () => {
-    onUpdatePlan([...plan, { 
+    onUpdatePlan([...plan, {
       type: 'break',
-      title: 'New Section' // Default title for new sections
+      title: 'New Block' // Default title
     }]);
+  };
+
+  const deleteSection = (rowIndex) => {
+    if (!window.confirm("Delete this entire block and all its exercises?")) return;
+
+    const newPlan = [];
+    let currentSectionIndex = -1;
+    let skipping = false;
+
+    // Reconstruct the plan, skipping the target section
+    for (let i = 0; i < plan.length; i++) {
+      if (plan[i].type === 'break') {
+        currentSectionIndex++;
+        if (currentSectionIndex === rowIndex) {
+          skipping = true;
+          continue; // Skip the break itself
+        } else {
+          skipping = false;
+        }
+      }
+
+      if (!skipping) {
+        newPlan.push(plan[i]);
+      }
+    }
+
+    // Ensure at least one section exists
+    if (newPlan.length === 0 || newPlan[0].type !== 'break') {
+      newPlan.unshift({ type: 'break', title: 'Start' });
+    }
+
+    onUpdatePlan(newPlan);
   };
 
   const updateSectionTitle = (rowIndex, newTitle) => {
     const newPlan = [...plan];
     let breakCount = 0;
-  
-    // Find the correct break item by row index
+
     for (let i = 0; i < newPlan.length; i++) {
       if (newPlan[i].type === 'break') {
         if (breakCount === rowIndex) {
@@ -171,16 +228,16 @@ const PlanBuilderModal = ({
         breakCount++;
       }
     }
-  
+
     onUpdatePlan(newPlan);
   };
 
   const enrichedPlan = plan.map(item => {
     if (item.type === 'break') return item;
-    
+
     const exercise = exercises.find(e => e.id === item.id);
     if (!exercise) return item;
-    
+
     return {
       ...item,
       name: exercise.name,
@@ -207,10 +264,11 @@ const PlanBuilderModal = ({
 
   const handleClearPlan = () => {
     if (window.confirm('Clear current plan and start new?')) {
-      onUpdatePlan([]); // This will clear all exercises
+      onUpdatePlan([]);
     }
   };
 
+  // Drag and drop logic...
   const handleDragStart = (e, globalIndex) => {
     e.stopPropagation();
     setDraggedIndex(globalIndex);
@@ -229,11 +287,9 @@ const PlanBuilderModal = ({
 
     const updatedPlan = [...plan];
     const draggedItem = { ...updatedPlan[draggedIndex] };
-    
-    // Remove from original position
+
     updatedPlan.splice(draggedIndex, 1);
-    
-    // If dropping on a break, add to the end of previous section
+
     if (updatedPlan[targetIndex]?.type === 'break') {
       let insertIndex = targetIndex;
       while (insertIndex > 0 && updatedPlan[insertIndex - 1]?.type === 'break') {
@@ -248,141 +304,40 @@ const PlanBuilderModal = ({
     setDraggedIndex(null);
   };
 
-  const exportToPDF = async () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
+  // Removed exportToPDF
 
-    try {
-      printContent.style.display = 'block';
-      printContent.style.position = 'absolute';
-      printContent.style.left = '-9999px';
-      
-      const images = printContent.getElementsByTagName('img');
-      await Promise.all(
-        Array.from(images).map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      const canvas = await html2canvas(printContent, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        imageTimeout: 15000,
-        windowWidth: printContent.scrollWidth,
-        onclone: (clonedDoc) => {
-          const clonedImages = clonedDoc.getElementsByTagName('img');
-          Array.from(clonedImages).forEach(img => {
-            img.style.display = 'block';
-            img.style.maxWidth = 'none';
-          });
-        }
+  const toggleTVMode = () => {
+    setIsTVMode(!isTVMode);
+    if (!isTVMode) {
+      previousSize.current = {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y
+      };
+      setSize({
+        width: window.innerWidth,
+        height: window.innerHeight
       });
-
-      printContent.style.display = 'none';
-      printContent.style.position = 'static';
-
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      const pdfWidth = 297; // A4 landscape width in mm
-      const pdfHeight = 210; // A4 landscape height in mm
-      const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, imgWidth, imgHeight, '', 'FAST');
-      const fileName = `workout-plan-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.pdf`;
-      pdf.save(fileName);
-
-    } catch (error) {
-      console.error('PDF export failed:', error);
-      alert('Failed to export PDF. Please try again.');
-    }
-  };
-
-  const togglePrintMode = () => {
-    setIsPrintMode(!isPrintMode);
-    if (!isPrintMode) {
+      setPosition({ x: 0, y: 0 });
+      setIsMaximized(true);
       onToggleEditMode(false);
-    }
-  };
-
-  const handleMultipleExercisesAdd = (rowIndex) => {
-    const exerciseSelector = document.createElement('div');
-    exerciseSelector.innerHTML = `
-      <div class="exercise-selector">
-        <h3>Select Exercises</h3>
-        <div class="exercise-list">
-          ${exercises.map(ex => `
-            <label>
-              <input type="checkbox" value="${ex.id}">
-              ${ex.name}
-            </label>
-          `).join('')}
-        </div>
-        <button class="add-selected">Add Selected</button>
-      </div>
-    `;
-
-    const dialog = document.createElement('dialog');
-    dialog.appendChild(exerciseSelector);
-    document.body.appendChild(dialog);
-    dialog.showModal();
-
-    dialog.querySelector('.add-selected').addEventListener('click', () => {
-      const selectedIds = Array.from(dialog.querySelectorAll('input:checked'))
-        .map(input => input.value);
-      onAddExercise(rowIndex, selectedIds); // Pass selected exercise IDs
-      dialog.close();
-    });
-  };
-
-  const addExerciseToCurrentSection = (exercise) => {
-    if (!isEditMode) return;
-
-    const newPlan = [...plan];
-    const newExercise = {
-      id: exercise.id,
-      sets: '',
-      reps: '',
-      repType: 'reps',
-      notes: ''
-    };
-
-    // Add to end if no sections exist
-    if (rows.length === 0) {
-      onUpdatePlan([...plan, newExercise]);
-      return;
-    }
-
-    // Add to current section
-    let insertIndex = 0;
-    let currentSection = 0;
-    
-    for (let i = 0; i < plan.length; i++) {
-      if (plan[i].type === 'break') {
-        currentSection++;
+    } else {
+      if (previousSize.current) {
+        setSize({
+          width: previousSize.current.width,
+          height: previousSize.current.height
+        });
+        setPosition({
+          x: previousSize.current.x,
+          y: previousSize.current.y
+        });
+      } else {
+        setSize({ width: 600, height: 400 });
+        setPosition({ x: 20, y: 20 });
       }
-      if (currentSection === activeSection) {
-        insertIndex = i + 1;
-        break;
-      }
+      setIsMaximized(false);
     }
-    
-    newPlan.splice(insertIndex, 0, newExercise);
-    onUpdatePlan(newPlan);
   };
 
   const handleNameSubmit = () => {
@@ -409,6 +364,8 @@ const PlanBuilderModal = ({
   }, [isEditingName]);
 
   const handleMaximize = () => {
+    if (isTVMode) return;
+
     if (!isMaximized) {
       previousSize.current = {
         width: size.width,
@@ -436,136 +393,42 @@ const PlanBuilderModal = ({
 
   if (!isOpen) return null;
 
-  // Print Mode View
-  if (isPrintMode) {
-    return (
-      <div className="fixed inset-0 z-50 bg-white overflow-auto">
-        {/* Header */}
-        <div className="fixed top-6 left-8 z-10">
-          <h1 className="text-3xl font-bold mb-1">Workout Plan</h1>
-          <div className="text-base text-gray-600">
-            {new Date().toLocaleDateString('en-US', { 
-              weekday: 'short', 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            })}
-          </div>
-        </div>
-
-        <button
-          onClick={togglePrintMode}
-          className="fixed top-4 right-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm opacity-50 hover:opacity-100 transition-opacity z-20"
-        >
-          ← Exit Print Mode
-        </button>
-
-        <div className="max-w-7xl mx-auto px-8 pt-24 pb-6">
-          {rows.map((row, rowIndex) => {
-            // Get section title using same logic as regular view
-            const sectionTitle = (() => {
-              let breakCount = 0;
-              for (let i = 0; i < plan.length; i++) {
-                if (plan[i].type === 'break') {
-                  if (breakCount === rowIndex) {
-                    return plan[i].title || `Section ${rowIndex + 1}`;
-                  }
-                  breakCount++;
-                }
-              }
-              return `Section ${rowIndex + 1}`;
-            })();
-
-            return (
-              <div key={rowIndex} className="mb-12"> {/* Increased margin for better section separation */}
-                {/* Section Title */}
-                <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">
-                  {sectionTitle}
-                </h2>
-
-                {/* Exercise Grid */}
-                <div className="grid grid-cols-4 gap-3">
-                  {row.map((exercise, index) => (
-                    <div 
-                      key={index}
-                      className="bg-white border rounded-lg p-3"
-                    >
-                      <div className="aspect-w-1 aspect-h-1 mb-2">
-                        <img
-                          src={exercise.imageUrl}
-                          alt={exercise.name}
-                          className="w-full h-32 object-contain"
-                          loading="lazy"
-                        />
-                      </div>
-
-                      <h3 className="text-base font-bold mb-1 text-center">
-                        {exercise.name}
-                      </h3>
-
-                      <div className="text-center">
-                        <span className="text-xl font-bold">
-                          {exercise.sets || '-'} × {exercise.reps || '-'}
-                        </span>
-                        <span className="text-sm ml-1">
-                          {exercise.repType || 'reps'}
-                        </span>
-                      </div>
-
-                      {exercise.notes && (
-                        <div className="text-sm text-gray-600 italic mt-1 text-center">
-                          {exercise.notes}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Optional subtle divider between sections */}
-                {rowIndex < rows.length - 1 && (
-                  <div className="mt-8 border-b border-gray-100" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  // Regular modal view
   return (
-    <div 
-      className={`modal-container ${isActive ? 'active-plan' : ''}`}
-      style={{
+    <div
+      className={`modal-container ${isActive ? 'active-plan' : ''} ${isTVMode ? 'fixed inset-0 z-[100]' : ''}`}
+      style={!isTVMode ? {
         left: position.x,
         top: position.y,
         width: `${size.width}px`,
         height: `${size.height}px`,
         touchAction: 'none'
-      }}
+      } : {}}
       ref={resizeRef}
       onMouseDown={handleMouseDown}
     >
-      <div className="bg-white rounded-lg shadow-lg flex flex-col h-full relative">
-        <div className="plan-builder-header">
+      <div className={`${isTVMode ? 'bg-gray-900' : 'bg-white'} rounded-lg shadow-lg flex flex-col h-full relative ${isTVMode ? 'rounded-none' : ''}`}>
+        <div className={`plan-builder-header ${isTVMode ? '!bg-gray-800 !border-gray-700' : ''}`}>
           <div className="flex justify-between items-center p-3">
             <div className="flex items-center gap-2">
-              <button 
-                onClick={onMinimize}
-                className="minimize-button"
-                title="Minimize"
-              >
-                —
-              </button>
-              <button
-                onClick={handleMaximize}
-                className="maximize-button"
-                title={isMaximized ? "Restore" : "Maximize"}
-              >
-                {isMaximized ? '❐' : '⛶'}
-              </button>
-              {isEditingName ? (
+              {!isTVMode && (
+                <>
+                  <button
+                    onClick={onMinimize}
+                    className="minimize-button"
+                    title="Minimize"
+                  >
+                    —
+                  </button>
+                  <button
+                    onClick={handleMaximize}
+                    className="maximize-button"
+                    title={isMaximized ? "Restore" : "Maximize"}
+                  >
+                    {isMaximized ? '❐' : '⛶'}
+                  </button>
+                </>
+              )}
+              {isEditingName && !isTVMode ? (
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -577,10 +440,10 @@ const PlanBuilderModal = ({
                   autoFocus
                 />
               ) : (
-                <h2 
-                  className="font-semibold text-lg cursor-pointer hover:bg-gray-100 px-2 py-1 rounded"
-                  onClick={() => setIsEditingName(true)}
-                  title="Click to edit name"
+                <h2
+                  className={`font-semibold text-lg ${!isTVMode ? 'cursor-pointer hover:bg-gray-100' : ''} px-2 py-1 rounded`}
+                  onClick={() => !isTVMode && setIsEditingName(true)}
+                  title={!isTVMode ? "Click to edit name" : ""}
                 >
                   {planName || 'Workout Plan'}
                 </h2>
@@ -588,76 +451,89 @@ const PlanBuilderModal = ({
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={togglePrintMode}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
+                onClick={toggleTVMode}
+                className={`px-3 py-2 rounded text-sm font-medium transition-colors ${isTVMode ? 'bg-purple-600 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'}`}
               >
-                🖨️ Print Mode
+                {isTVMode ? 'Exit TV Mode' : '📺 TV Mode'}
               </button>
-              <button
-                onClick={onDuplicate}
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                📋 Duplicate
-              </button>
-              <button
-                onClick={() => onSave()}
-                className="save-button"
-              >
-                💾 Save
-              </button>
-              {!isActive && (
-                <button
-                  onClick={onActivate}
-                  className="activate-button"
-                >
-                  ⭐ Make Active
-                </button>
+
+              {!isTVMode && (
+                <>
+                  {/* Add Section Button - Restored Feature */}
+                  <button
+                    onClick={addRowBreak}
+                    className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded text-sm font-medium"
+                    title="Add a new block/section"
+                  >
+                    + Block
+                  </button>
+
+                  <button
+                    onClick={onDuplicate}
+                    className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                  >
+                    📋 Duplicate
+                  </button>
+                  <button
+                    onClick={() => onSave()}
+                    className="save-button"
+                  >
+                    💾 Save
+                  </button>
+                  {!isActive && (
+                    <button
+                      onClick={onActivate}
+                      className="activate-button"
+                    >
+                      ⭐ Make Active
+                    </button>
+                  )}
+                  <button
+                    onClick={handleClearPlan}
+                    className="text-sm px-2 py-1 text-gray-600 hover:text-red-600"
+                  >
+                    Clear Plan
+                  </button>
+                  <div className={`text-sm px-2 py-1 rounded ${isEditMode ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'}`}>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isEditMode}
+                        onChange={onToggleEditMode}
+                        className="hidden"
+                      />
+                      {isEditMode ? '✏️ Edit Mode' : '👀 View Mode'}
+                    </label>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (plan.length > 0) {
+                        onUpdatePlan(plan);
+                      }
+                      if (typeof onClose === 'function') {
+                        onClose();
+                      }
+                    }}
+                    className="icon-button"
+                  >
+                    ×
+                  </button>
+                </>
               )}
-              <button
-                onClick={handleClearPlan}
-                className="text-sm px-2 py-1 text-gray-600 hover:text-red-600"
-              >
-                Clear Plan
-              </button>
-              <div className={`text-sm px-2 py-1 rounded ${isEditMode ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'}`}>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isEditMode}
-                    onChange={onToggleEditMode}
-                    className="hidden"
-                  />
-                  {isEditMode ? '✏️ Edit Mode' : '👀 View Mode'}
-                </label>
-              </div>
-              <button 
-                onClick={() => {
-                  if (plan.length > 0) {
-                    // Save the plan before closing if it contains exercises
-                    onUpdatePlan(plan);
-                  }
-                  if (typeof onClose === 'function') {
-                    onClose();
-                  }
-                }} 
-                className="icon-button"
-              >
-                ×
-              </button>
+              {isTVMode && (
+                <button onClick={toggleTVMode} className="icon-button">×</button>
+              )}
             </div>
           </div>
         </div>
 
-        <div 
-          ref={contentRef} 
+        <div
+          ref={contentRef}
           className="flex-1 overflow-y-auto p-2"
         >
           <div>
             {rows.map((row, rowIndex) => {
-              // Create a map of exercises to their actual indices in the plan array
               const exerciseIndices = [];
-              let exerciseCount = 0;
-              
               for (let i = 0; i < plan.length; i++) {
                 if (plan[i].type !== 'break') {
                   exerciseIndices.push(i);
@@ -665,9 +541,10 @@ const PlanBuilderModal = ({
               }
 
               return (
-                <div key={rowIndex} className="mb-8">
-                  {/* Section Title Input */}
-                  <div className="mb-4">
+                <div key={rowIndex} className={`${isTVMode ? 'mb-2' : 'mb-8'}`}>
+
+                  {/* Section Title & Controls */}
+                  <div className={`${isTVMode ? 'mb-1' : 'mb-4'} flex items-center gap-2`}>
                     <input
                       type="text"
                       value={(() => {
@@ -684,49 +561,68 @@ const PlanBuilderModal = ({
                       })()}
                       onChange={(e) => updateSectionTitle(rowIndex, e.target.value)}
                       onFocus={(e) => isEditMode && e.target.select()}
-                      disabled={!isEditMode}
-                      className={`w-full px-4 py-2 text-lg font-medium border
-                                rounded-md transition-colors ${
-                                  isEditMode 
-                                    ? 'border-gray-200 bg-white hover:border-blue-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500' 
-                                    : 'border-transparent bg-gray-50 text-gray-700'
-                                }`}
-                      placeholder={isEditMode ? "Click to name section..." : ""}
+                      disabled={!isEditMode || isTVMode}
+                      className={`flex-1 px-4 py-2 text-lg font-medium border
+                                rounded-md transition-colors ${isEditMode
+                          ? 'border-gray-200 bg-white hover:border-blue-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                          : `border-transparent bg-transparent ${isTVMode ? 'text-yellow-400 font-bold tracking-widest uppercase' : 'text-gray-700'}`
+                        }`}
+                      placeholder={isEditMode && !isTVMode ? "Name this block..." : ""}
                     />
+                    {isEditMode && !isTVMode && (
+                      <button
+                        onClick={() => deleteSection(rowIndex)}
+                        className="text-red-500 hover:text-red-700 px-3 py-2 rounded hover:bg-red-50 text-sm font-medium"
+                        title="Delete this block"
+                      >
+                        Delete Block
+                      </button>
+                    )}
                   </div>
 
-                  <div className="plan-exercise-row">
+                  {/* Grid Logic: Use grid-cols-6 for TV mode (explicit grid) */}
+                  <div className={`plan-exercise-row ${isTVMode ? '!grid !grid-cols-6 !gap-2' : ''}`}>
                     {row.map((exercise, indexInRow) => {
-                      // Calculate which exercise number this is overall
                       let overallExerciseIndex = 0;
                       for (let r = 0; r < rowIndex; r++) {
                         overallExerciseIndex += rows[r].length;
                       }
                       overallExerciseIndex += indexInRow;
-                      
-                      // Get the actual index in the plan array
+
                       const currentIndex = exerciseIndices[overallExerciseIndex];
+                      const colorObj = EXERCISE_COLORS.find(c => c.id === exercise.color) || EXERCISE_COLORS[0];
 
                       return (
                         <div
                           key={currentIndex}
-                          draggable={!isPrintMode}
-                          className={`plan-exercise-card ${draggedIndex === currentIndex ? 'dragging' : ''} ${
-                            !isPrintMode ? 'cursor-move' : ''
-                          }`}
-                          onDragStart={(e) => !isPrintMode && handleDragStart(e, currentIndex)}
+                          draggable={!isTVMode}
+                          className={`plan-exercise-card ${draggedIndex === currentIndex ? 'dragging' : ''} ${!isTVMode ? 'cursor-move' : ''
+                            } ${colorObj.bg} ${colorObj.border} border-4 ${isTVMode ? '!w-full !max-w-none' : ''}`} // THICKER BORDER (border-4)
+                          onDragStart={(e) => !isTVMode && handleDragStart(e, currentIndex)}
                           onDragOver={handleDragOver}
-                          onDrop={(e) => !isPrintMode && handleDrop(e, currentIndex)}
+                          onDrop={(e) => !isTVMode && handleDrop(e, currentIndex)}
+                          onClick={() => {
+                            if (isTVMode && exercise.videoUrl) {
+                              setPlayingVideoUrl(exercise.videoUrl);
+                            }
+                          }}
                         >
-                          <div className="flex justify-between mb-2">
+                          {/* Video Icon Indicator */}
+                          {exercise.videoUrl && (
+                            <div className="absolute top-2 right-2 z-10 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md">
+                              <span className="text-[10px]">▶</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between mb-2 relative">
+                            {/* TV Mode Image: Adjusted for 6-col layout */}
                             <img
                               src={exercise.imageUrl}
                               alt={exercise.name}
-                              className="object-contain mb-1"
+                              className={`object-contain mb-1 w-full ${isTVMode ? '!h-56' : 'h-32'}`}
                             />
-                            {isEditMode && (
-                              <button 
-                                className="icon-button text-sm hover:bg-red-100 hover:text-red-600"
+                            {isEditMode && !isTVMode && (
+                              <button
+                                className="icon-button text-sm hover:bg-red-100 hover:text-red-600 absolute top-0 right-0"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const newPlan = [...plan];
@@ -739,24 +635,24 @@ const PlanBuilderModal = ({
                             )}
                           </div>
 
-                          <div className="font-medium mb-2 text-sm">
+                          <div className={`font-medium mb-2 text-sm ${isTVMode ? 'text-center truncate text-xl font-bold mt-1' : ''}`}>
                             {exercise.name}
                           </div>
 
-                          {isEditMode ? (
+                          {isEditMode && !isTVMode ? (
                             <>
-                              <div className="flex items-center gap-1 mb-1">
+                              <div className="flex flex-wrap items-center gap-1 mb-1">
                                 <input
                                   type="number"
                                   min="0"
                                   placeholder="Sets"
                                   value={exercise.sets || ''}
-                                  onChange={(e) => updateExercise(currentIndex, { 
-                                    sets: e.target.value 
+                                  onChange={(e) => updateExercise(currentIndex, {
+                                    sets: e.target.value
                                   })}
-                                  className="plan-input w-16"
+                                  className="plan-input w-12"
                                 />
-                                ×
+                                <span className="text-gray-500">×</span>
                                 <input
                                   type="number"
                                   min="0"
@@ -765,7 +661,7 @@ const PlanBuilderModal = ({
                                   onChange={(e) => updateExercise(currentIndex, {
                                     reps: e.target.value
                                   })}
-                                  className="plan-input w-16"
+                                  className="plan-input w-12"
                                 />
                                 <CompactRepTypeSelect
                                   value={exercise.repType || 'reps'}
@@ -783,14 +679,18 @@ const PlanBuilderModal = ({
                                 })}
                                 className="w-full text-sm px-1 py-0.5 border rounded"
                               />
+                              <ColorPicker
+                                value={exercise.color || 'default'}
+                                onChange={(color) => updateExercise(currentIndex, { color })}
+                              />
                             </>
                           ) : (
                             <>
-                              <div className="font-semibold text-gray-800 mb-2 text-lg">
+                              <div className={`font-semibold text-gray-800 mb-2 ${isTVMode ? 'text-2xl text-center font-extrabold my-1' : 'text-lg'}`}>
                                 {exercise.sets || '-'} × {exercise.reps || '-'} {exercise.repType || 'reps'}
                               </div>
                               {exercise.notes && (
-                                <div className="text-gray-600 italic text-sm">
+                                <div className={`${isTVMode ? 'text-3xl font-extrabold text-blue-700 bg-blue-50 rounded px-1' : 'text-gray-600 italic text-sm'} ${isTVMode ? 'text-center mt-1' : ''}`}>
                                   {exercise.notes}
                                 </div>
                               )}
@@ -800,56 +700,24 @@ const PlanBuilderModal = ({
                       );
                     })}
                   </div>
-
-                  {/* Remove the old section break rendering since we now show titles above */}
-                  {!isPrintMode && (
-                    <div className="text-center py-2">
-                      <button
-                        onClick={() => handleMultipleExercisesAdd(rowIndex)}
-                        className="text-xs px-3 py-1 border border-dashed border-gray-300 
-                                 rounded hover:bg-gray-50"
-                      >
-                        + Add Exercises
-                      </button>
-                    </div>
+                  {/* Subtle divider for all modes */}
+                  {rowIndex < rows.length - 1 && (
+                    <div className={`${isTVMode ? 'mt-4 border-gray-700' : 'mt-8 border-gray-200'} border-b`} />
                   )}
                 </div>
               );
             })}
           </div>
         </div>
-
-        <div className="flex justify-between p-2 border-t bg-white">
-          <button
-            onClick={addRowBreak}
-            className="text-sm px-3 py-1 border rounded hover:bg-gray-50"
-          >
-            ↓ New Section
-          </button>
-          <div className="flex gap-2">
-            {isEditMode && (
-              <button
-                onClick={() => onToggleEditMode(false)}
-                className="text-sm px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-              >
-                Done Editing
-              </button>
-            )}
-            <button
-              onClick={exportToPDF}
-              className="text-sm px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Export PDF
-            </button>
-          </div>
-        </div>
+        {/* Video Player Overlay */}
+        {playingVideoUrl && isTVMode && (
+          <VideoPlayerModal
+            isOpen={!!playingVideoUrl}
+            videoUrl={playingVideoUrl}
+            onClose={() => setPlayingVideoUrl(null)}
+          />
+        )}
       </div>
-
-      {/* Resize handle */}
-      <div 
-        className="resize-handle"
-        onMouseDown={handleResizeStart}
-      />
     </div>
   );
 };

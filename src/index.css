@@ -48,7 +48,8 @@ code {
   display: grid;
   gap: 1rem;
   margin-bottom: 2rem;
-  overflow: visible; /* Allow rows to expand */
+  overflow: visible;
+  /* Allow rows to expand */
 }
 
 .muscle-group-row[data-rows="1"] {
@@ -77,7 +78,8 @@ code {
 }
 
 .muscle-group-row {
-  overflow-y: hidden; /* Hide overflow beyond the specified rows */
+  overflow-y: hidden;
+  /* Hide overflow beyond the specified rows */
 }
 
 .muscle-group-row::-webkit-scrollbar {
@@ -134,7 +136,7 @@ code {
   position: fixed;
   background: white;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   min-width: 400px;
   min-height: 300px;
   resize: both;
@@ -180,19 +182,16 @@ code {
   background: #3b82f6;
 }
 
+
+
+
+
 .plan-exercise-card {
   flex: 0 0 auto;
   width: 180px;
   background: #f8f9fa;
   border-radius: 4px;
   padding: 0.5rem;
-}
-
-.plan-exercise-card img {
-  width: 100px;
-  height: 100px;
-  object-fit: contain;
-  margin: 0 auto;
 }
 
 .plan-exercise-card.dragging {
@@ -247,9 +246,19 @@ code {
 }
 
 @keyframes wiggle {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-1deg); }
-  75% { transform: rotate(1deg); }
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-1deg);
+  }
+
+  75% {
+    transform: rotate(1deg);
+  }
 }
 
 .exercise-card.edit-mode:hover {
@@ -266,7 +275,8 @@ code {
   width: 150px;
   min-width: 150px;
   max-width: 200px;
-  touch-action: none;  /* Enable dragging on touch devices */
+  touch-action: none;
+  /* Enable dragging on touch devices */
   cursor: grab;
   transition: transform 0.2s, box-shadow 0.2s;
   height: 100%;
@@ -278,13 +288,13 @@ code {
 }
 
 .exercise-card.clickable:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .exercise-card:hover {
   background: #f9fafb;
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .exercise-card img {
@@ -335,7 +345,7 @@ code {
 .exercise-card.dragging {
   opacity: 0.5;
   transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .exercise-card.drag-over {
@@ -353,10 +363,21 @@ code {
 }
 
 @keyframes shake {
-  0% { transform: rotate(0deg); }
-  25% { transform: rotate(-0.5deg); }
-  75% { transform: rotate(0.5deg); }
-  100% { transform: rotate(0deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-0.5deg);
+  }
+
+  75% {
+    transform: rotate(0.5deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
 }
 
 .exercise-card.edit-mode {
@@ -434,20 +455,24 @@ code {
 /* Modal Styles */
 .modal-container {
   position: fixed;
-  min-width: 750px; /* Changed from 400px */
-  min-height: 600px; /* Changed from 300px */
+  min-width: 750px;
+  /* Changed from 400px */
+  min-height: 600px;
+  /* Changed from 300px */
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   z-index: 1000;
-  resize: both; /* Allow both width and height resizing */
+  resize: both;
+  /* Allow both width and height resizing */
   overflow: auto;
   transition: all 0.3s ease;
 }
 
 /* Adjust internal content padding */
 .modal-content {
-  padding: 24px; /* Increased padding */
+  padding: 24px;
+  /* Increased padding */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -505,15 +530,53 @@ code {
 }
 
 /* Position handles */
-.resize-handle.top { top: 0; height: 6px; cursor: n-resize; }
-.resize-handle.right { right: 0; width: 6px; cursor: e-resize; }
-.resize-handle.bottom { bottom: 0; height: 6px; cursor: s-resize; }
-.resize-handle.left { left: 0; width: 6px; cursor: w-resize; }
+.resize-handle.top {
+  top: 0;
+  height: 6px;
+  cursor: n-resize;
+}
 
-.resize-handle.top-left { top: -4px; left: -4px; cursor: nw-resize; }
-.resize-handle.top-right { top: -4px; right: -4px; cursor: ne-resize; }
-.resize-handle.bottom-left { bottom: -4px; left: -4px; cursor: sw-resize; }
-.resize-handle.bottom-right { bottom: -4px; right: -4px; cursor: se-resize; }
+.resize-handle.right {
+  right: 0;
+  width: 6px;
+  cursor: e-resize;
+}
+
+.resize-handle.bottom {
+  bottom: 0;
+  height: 6px;
+  cursor: s-resize;
+}
+
+.resize-handle.left {
+  left: 0;
+  width: 6px;
+  cursor: w-resize;
+}
+
+.resize-handle.top-left {
+  top: -4px;
+  left: -4px;
+  cursor: nw-resize;
+}
+
+.resize-handle.top-right {
+  top: -4px;
+  right: -4px;
+  cursor: ne-resize;
+}
+
+.resize-handle.bottom-left {
+  bottom: -4px;
+  left: -4px;
+  cursor: sw-resize;
+}
+
+.resize-handle.bottom-right {
+  bottom: -4px;
+  right: -4px;
+  cursor: se-resize;
+}
 
 /* Resize handles for all corners */
 .resize-handle {

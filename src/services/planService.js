@@ -46,7 +46,8 @@ export const savePlanToFirestore = async (plan) => {
     ...plan,
     updatedAt: new Date().toISOString(),
     createdAt: plan.createdAt || new Date().toISOString(),
-    isArchived: plan.isArchived || false
+    isArchived: plan.isArchived || false,
+    groupId: plan.groupId || null // Ensure groupId is saved
   };
 
   if (plan.firebaseId) {
@@ -59,13 +60,49 @@ export const savePlanToFirestore = async (plan) => {
   return docRef.id;
 };
 
-export const loadPlansFromFirestore = async () => {
-  const q = query(collection(db, 'plans'), orderBy('updatedAt', 'desc'));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({
-    ...doc.data(),
-    firebaseId: doc.id
-  }));
+export const loadPlansFromFirestore = async (groupId = null) => {
+  const plansRef = collection(db, 'plans');
+  let q;
+
+  if (groupId) {
+    // If a group is selected, filter by that groupId
+    // Note: You might need to create a composite index in Firestore for 'groupId' + 'updatedAt'
+    // For now, sorting in client might be safer if index is missing, but let's try standard query
+    // If filtering by group, we might lose ordering if index isn't there, so we can do client-side sort
+    // OR just filter by groupId and let client sort.
+    // Let's grab all for the group.
+
+    // Simple query for now to avoid Index issues immediately
+    // Ideally: query(plansRef, where('groupId', '==', groupId), orderBy('updatedAt', 'desc'));
+    // But let's retrieve all and filter in memory if needed, OR just filter by ID.
+    // Let's try to query by groupId.
+    const { where } = await import('firebase/firestore');
+    q = query(plansRef, where('groupId', '==', groupId), orderBy('updatedAt', 'desc'));
+  } else {
+    // Legacy support or "All Plans" admin view if ever needed
+    // However, user wants separation. If no group passed, maybe return nothing or all?
+    // Let's default to returning all if no group specified (legacy behavior)
+    q = query(plansRef, orderBy('updatedAt', 'desc'));
+  }
+
+  try {
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      ...doc.data(),
+      firebaseId: doc.id
+    }));
+  } catch (err) {
+    // Fallback if index is missing for orderBy
+    console.warn("Query failed, potentially missing index. Falling back to client-side sort.", err);
+    if (groupId) {
+      const { where } = await import('firebase/firestore');
+      q = query(plansRef, where('groupId', '==', groupId));
+      const snapshot = await getDocs(q);
+      const plans = snapshot.docs.map(doc => ({ ...doc.data(), firebaseId: doc.id }));
+      return plans.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    }
+    throw err;
+  }
 };
 
 export const archivePlan = async (planId) => {
