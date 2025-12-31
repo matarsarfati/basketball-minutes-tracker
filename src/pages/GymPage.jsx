@@ -1189,6 +1189,8 @@ const GymPage = () => {
             onActivate={() => setActiveWorkoutPlan(planId)}
             onRenamePlan={(newName) => renamePlan(planId, newName)}
             defaultTVMode={urlTvMode && plan.id === urlPlanId}
+            planId={planId}
+            firebaseId={plan.firebaseId}
           />
         );
       })}

@@ -58,7 +58,9 @@ const PlanBuilderModal = ({
   isActive,
   onActivate,
   onRenamePlan,
-  defaultTVMode // New prop
+  defaultTVMode, // New prop
+  planId, // New prop
+  firebaseId // New prop (to check saved status)
 }) => {
   const [position, setPosition] = useState(
     initialPosition || { x: window.innerWidth - 520, y: 20 }
@@ -472,7 +474,11 @@ const PlanBuilderModal = ({
                   <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                        if (!firebaseId) {
+                          alert("Please save the plan first to generate a shareable link.");
+                          return;
+                        }
+                        const url = `${window.location.origin}/gym?planId=${planId}&tv=true`;
                         window.open(url, '_blank');
                       }}
                       className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
@@ -482,7 +488,11 @@ const PlanBuilderModal = ({
                     </button>
                     <button
                       onClick={() => {
-                        const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                        if (!firebaseId) {
+                          alert("Please save the plan first to generate a shareable link.");
+                          return;
+                        }
+                        const url = `${window.location.origin}/gym?planId=${planId}&tv=true`;
                         navigator.clipboard.writeText(url);
                         alert('Link copied to clipboard! Share it with your athletes.');
                       }}
