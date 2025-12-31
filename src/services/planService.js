@@ -47,7 +47,8 @@ export const savePlanToFirestore = async (plan) => {
     updatedAt: new Date().toISOString(),
     createdAt: plan.createdAt || new Date().toISOString(),
     isArchived: plan.isArchived || false,
-    groupId: plan.groupId || null // Ensure groupId is saved
+    groupId: plan.groupId || null, // Ensure groupId is saved
+    programUrl: plan.programUrl || '' // Save program URL
   };
 
   if (plan.firebaseId) {

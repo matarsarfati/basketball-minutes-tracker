@@ -13,7 +13,8 @@ const IndividualPlanBuilderModal = ({
     onActivate,
     planName,
     onRenamePlan,
-    draggedExercise // Received from parent
+    draggedExercise, // Received from parent
+    defaultTVMode // New prop
 }) => {
     // --- Window Management (Position/Size) ---
     const [position, setPosition] = useState({ x: 100, y: 50 });
@@ -21,7 +22,7 @@ const IndividualPlanBuilderModal = ({
     const [isDragging, setIsDragging] = useState(false);
     const [isResizing, setIsResizing] = useState(false);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-    const [isTVMode, setIsTVMode] = useState(false);
+    const [isTVMode, setIsTVMode] = useState(defaultTVMode || false);
     const [playingVideoUrl, setPlayingVideoUrl] = useState(null); // Video state
     const resizeRef = useRef(null);
 
@@ -179,6 +180,29 @@ const IndividualPlanBuilderModal = ({
                     />
                 </div>
                 <div className="flex items-center gap-2">
+                    {!isTVMode && (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => {
+                                    const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                                    window.open(url, '_blank');
+                                }}
+                                className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
+                            >
+                                ↗️ Test Link
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                                    navigator.clipboard.writeText(url);
+                                    alert('Link copied to clipboard! Share it with your athletes.');
+                                }}
+                                className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200"
+                            >
+                                🔗 Copy Share Link
+                            </button>
+                        </div>
+                    )}
                     <button
                         onClick={() => setIsTVMode(!isTVMode)}
                         className={`px-3 py-1 rounded font-medium text-sm transition-colors

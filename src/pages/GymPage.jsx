@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PlanBuilderModal from '../components/gym/PlanBuilderModal';
 import IndividualPlanBuilderModal from '../components/gym/IndividualPlanBuilderModal';
 import ExerciseLibrarySettings from '../components/gym/ExerciseLibrarySettings';
@@ -18,6 +19,9 @@ import { getGymGroups, createGymGroup, deleteGymGroup } from '../services/groupS
 import { loadPlansFromFirestore } from '../services/planService'; // Import the new loader
 
 const GymPage = () => {
+  const [searchParams] = useSearchParams();
+  const urlPlanId = searchParams.get('planId');
+  const urlTvMode = searchParams.get('tv') === 'true';
   // Add validation helper at the top
   const validateMuscleGroup = useCallback((group) => {
     return group &&
@@ -262,6 +266,21 @@ const GymPage = () => {
         setIsLoading(false);
       });
   }, [selectedGroupId]);
+
+  // Handle URL Deep Linking
+  useEffect(() => {
+    if (!isLoading && plans.length > 0 && urlPlanId) {
+      const targetPlan = plans.find(p => p.id === urlPlanId);
+      if (targetPlan) {
+        if (!openPlanIds.includes(urlPlanId)) {
+          setOpenPlanIds(prev => [...prev, urlPlanId]);
+        }
+        setCurrentPlanId(urlPlanId);
+        setActivePlanId(urlPlanId);
+        // We will pass the TV mode preference down to the modal
+      }
+    }
+  }, [isLoading, plans, urlPlanId, openPlanIds]); // Added dependencies to ensure it runs when plans load
   useEffect(() => {
     if (!isLoading && customExercises.length > 0) {
       saveExercises(customExercises).catch(err => {
@@ -1146,6 +1165,7 @@ const GymPage = () => {
               onRenamePlan={(newName) => renamePlan(planId, newName)}
               draggedExercise={draggedExercise} // Pass dragged exercise for dropping
               exercises={customExercises}
+              defaultTVMode={urlTvMode && plan.id === urlPlanId}
             />
           );
         }
@@ -1168,6 +1188,7 @@ const GymPage = () => {
             isActive={activePlanId === planId}
             onActivate={() => setActiveWorkoutPlan(planId)}
             onRenamePlan={(newName) => renamePlan(planId, newName)}
+            defaultTVMode={urlTvMode && plan.id === urlPlanId}
           />
         );
       })}

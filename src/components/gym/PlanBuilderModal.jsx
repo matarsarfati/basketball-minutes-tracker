@@ -57,7 +57,8 @@ const PlanBuilderModal = ({
   onSave,
   isActive,
   onActivate,
-  onRenamePlan
+  onRenamePlan,
+  defaultTVMode // New prop
 }) => {
   const [position, setPosition] = useState(
     initialPosition || { x: window.innerWidth - 520, y: 20 }
@@ -72,7 +73,7 @@ const PlanBuilderModal = ({
   const contentRef = useRef(null);
   const [draggedIndex, setDraggedIndex] = useState(null);
   // Removed Print refs/state
-  const [isTVMode, setIsTVMode] = useState(false);
+  const [isTVMode, setIsTVMode] = useState(defaultTVMode || false);
   const [playingVideoUrl, setPlayingVideoUrl] = useState(null); // Video state
   const [activeSection, setActiveSection] = useState(0);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -468,6 +469,30 @@ const PlanBuilderModal = ({
                     + Block
                   </button>
 
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                        window.open(url, '_blank');
+                      }}
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
+                      title="Open link in new tab to test"
+                    >
+                      ↗️ Test Link
+                    </button>
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/gym?planId=${plan.id}&tv=true`;
+                        navigator.clipboard.writeText(url);
+                        alert('Link copied to clipboard! Share it with your athletes.');
+                      }}
+                      className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200"
+                      title="Copy shareable link"
+                    >
+                      🔗 Copy Share Link
+                    </button>
+                  </div>
+
                   <button
                     onClick={onDuplicate}
                     className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
@@ -718,7 +743,7 @@ const PlanBuilderModal = ({
           />
         )}
       </div>
-    </div>
+    </div >
   );
 };
 
