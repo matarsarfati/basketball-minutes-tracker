@@ -600,6 +600,28 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           }
         }
 
+        // Handle attendance updates
+        if (practiceData?.attendance) {
+          setAttendance(prev => {
+            // Merge with previous to preserve local-only transient states if any, 
+            // but normally we trust the server. 
+            // However, to be safe against race conditions where we might have just clicked 
+            // but not synced yet, we rely on the debounce. 
+            // The service already filters out our own recent echoes.
+            return practiceData.attendance;
+          });
+        }
+
+        // Handle drill rows updates
+        if (practiceData?.drillRows) {
+          setDrillRows(practiceData.drillRows);
+        }
+
+        // Handle survey completion status
+        if (typeof practiceData?.surveyCompleted !== 'undefined') {
+          setSurveyCompleted(practiceData.surveyCompleted);
+        }
+
         // Handle gym survey data updates
         if (practiceData?.gymSurveyData) {
           console.log('📥 Updating gym survey data:', {
