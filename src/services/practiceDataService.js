@@ -64,10 +64,31 @@ class PracticeDataService {
     }
   };
 
+  patchPracticeData = async (sessionId, partialData) => {
+    if (!sessionId) return;
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      const saveTimestamp = new Date().getTime();
+      this.lastSaveTimestamp = saveTimestamp;
+
+      const updatePayload = {
+        ...partialData,
+        lastUpdated: serverTimestamp(),
+        clientTimestamp: saveTimestamp,
+        deviceId: this.deviceId
+      };
+
+      await setDoc(docRef, updatePayload, { merge: true });
+      // console.log('✅ Partial save successful', Object.keys(partialData));
+    } catch (error) {
+      console.error('❌ Partial save failed:', error);
+    }
+  };
+
   subscribeToPracticeData = (sessionId, callback) => {
     if (!sessionId) {
       console.error('❌ No sessionId provided for subscription');
-      return () => {};
+      return () => { };
     }
 
     console.log('🔄 Setting up subscription:', { sessionId });
@@ -82,7 +103,7 @@ class PracticeDataService {
 
         // Only skip if this is our own device's recent save
         if (data?.deviceId === this.deviceId &&
-            data?.clientTimestamp === this.lastSaveTimestamp) {
+          data?.clientTimestamp === this.lastSaveTimestamp) {
           console.log('📥 Skipping own update');
           return;
         }

@@ -10,9 +10,37 @@ import React, {
 import { Link, useParams, useNavigate } from "react-router-dom";
 import './styles.css';
 import { rosterService } from './services/rosterService';
+import {
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Check,
+  UserX,
+  Clock,
+  Activity,
+  Users,
+  Save
+} from 'lucide-react';
 import { practiceDataService } from './services/practiceDataService';
 import { wellnessService } from './services/wellnessService';
 import { generatePrePracticePDF, generatePracticePDF } from './pdfGenerator';
+
+// Simple debounce hook
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 const safeParse = (key, defaultValue) => {
   if (typeof window === "undefined") return defaultValue;
@@ -69,13 +97,13 @@ const getRosterNames = () => {
   const raw = safeParse(ROSTER_KEY, []);
   return Array.isArray(raw)
     ? raw
-        .map(player =>
-          typeof player === "string" ? player : player?.name || ""
-        )
-        .filter(Boolean)
+      .map(player =>
+        typeof player === "string" ? player : player?.name || ""
+      )
+      .filter(Boolean)
     : [];
 };
-  
+
 const STORAGE_KEY_V2 = "teamScheduleV2";
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -84,42 +112,42 @@ const loadSessions = () => {
   const parsed = safeParse(STORAGE_KEY_V2, []);
   return Array.isArray(parsed) ? parsed : [];
 };
-  
-  const calcSurveyAverages = players => {
-    if (!players || players.length === 0) {
-      return { rpe: 0, legs: 0 };
-    }
-    const totals = players.reduce(
-      (acc, player) => {
-        acc.rpe += Number(player.rpe || 0);
-        acc.legs += Number(player.legs || 0);
-        return acc;
-      },
-      { rpe: 0, legs: 0 }
-    );
-    return {
-      rpe: Number((totals.rpe / players.length).toFixed(2)),
-      legs: Number((totals.legs / players.length).toFixed(2)),
-    };
+
+const calcSurveyAverages = players => {
+  if (!players || players.length === 0) {
+    return { rpe: 0, legs: 0 };
+  }
+  const totals = players.reduce(
+    (acc, player) => {
+      acc.rpe += Number(player.rpe || 0);
+      acc.legs += Number(player.legs || 0);
+      return acc;
+    },
+    { rpe: 0, legs: 0 }
+  );
+  return {
+    rpe: Number((totals.rpe / players.length).toFixed(2)),
+    legs: Number((totals.legs / players.length).toFixed(2)),
   };
-  
-  const formatSeconds = sec => {
-    const total = Math.max(0, Math.floor(sec || 0));
-    const minutes = Math.floor(total / 60)
-      .toString()
-      .padStart(2, "0");
-    const seconds = (total % 60).toString().padStart(2, "0");
-    return `${minutes}:${seconds}`;
-  };
-  
-  const getTodayISO = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = `${now.getMonth() + 1}`.padStart(2, "0");
-    const day = `${now.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-  
+};
+
+const formatSeconds = sec => {
+  const total = Math.max(0, Math.floor(sec || 0));
+  const minutes = Math.floor(total / 60)
+    .toString()
+    .padStart(2, "0");
+  const seconds = (total % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+};
+
+const getTodayISO = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const safeUUID = () => {
   if (typeof window !== "undefined" && window.crypto?.randomUUID) {
     return window.crypto.randomUUID();
@@ -237,13 +265,13 @@ const getWellnessColor = (value, metric) => {
       if (value >= 7) return WELLNESS_COLORS.good;
       if (value >= 5) return WELLNESS_COLORS.moderate;
       return WELLNESS_COLORS.poor;
-      
+
     case 'fatigue':
     case 'soreness':
       if (value <= 4) return WELLNESS_COLORS.good;
       if (value <= 6) return WELLNESS_COLORS.moderate;
       return WELLNESS_COLORS.poor;
-      
+
     default:
       return [255, 255, 255];
   }
@@ -253,10 +281,10 @@ const checkWellnessData = (wellnessData) => {
   if (!wellnessData) return false;
   if (!wellnessData.responses) return false;
   if (!wellnessData.averages) return false;
-  
+
   const hasResponses = Object.keys(wellnessData.responses).length > 0;
   const hasValidAverages = Object.values(wellnessData.averages).some(v => v > 0);
-  
+
   return hasResponses || hasValidAverages;
 };
 
@@ -394,7 +422,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
   const audioCtxRef = useRef(null);
-  const triggerBeepRef = useRef(() => {});
+  const triggerBeepRef = useRef(() => { });
   const isSavingRef = useRef(false);
   const [surveyStore, setSurveyStore] = useState(() => getSurveyStore());
   const [quickRosterName, setQuickRosterName] = useState("");
@@ -407,11 +435,55 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   const [summaryEdits, setSummaryEdits] = useState({});
   const [timers, setTimers] = useState([]);
 
+  // Sync State
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'synced', 'syncing', 'error'
+
+  // Debounce the critical data that needs to be synced
+  const debouncedPracticeData = useDebounce({
+    metrics,
+    drillRows,
+    attendance,
+    surveyCompleted
+  }, 1000);
+
+  // Auto-Sync Effect
+  useEffect(() => {
+    if (!session?.id || isInitialLoad) return;
+
+    const syncData = async () => {
+      setSyncStatus('syncing');
+      try {
+        await practiceDataService.patchPracticeData(session.id, debouncedPracticeData);
+        setSyncStatus('synced');
+        setLastSyncTime(new Date());
+      } catch (error) {
+        console.error('Auto-sync failed:', error);
+        setSyncStatus('error');
+      }
+    };
+
+    syncData();
+  }, [debouncedPracticeData, session?.id, isInitialLoad]);
+
   useEffect(() => {
     const fetchRoster = async () => {
       setIsLoadingRoster(true);
       try {
         const players = await rosterService.getPlayers();
+
+        // Initialize attendance for new players as 'Present' by default if not already set
+        setAttendance(prev => {
+          const newAttendance = { ...prev };
+          let changed = false;
+          players.forEach(p => {
+            if (!newAttendance[p.name]) {
+              newAttendance[p.name] = { present: true }; // Default to Present
+              changed = true;
+            }
+          });
+          return changed ? newAttendance : prev;
+        });
+
         setRoster(players);
       } catch (error) {
         console.error('Failed to load roster:', error);
@@ -453,7 +525,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         // Add gym survey averages calculation
         const gymResponses = Object.values(gymSurveys);
         if (gymResponses.length > 0) {
-          const gymTotal = gymResponses.reduce((acc, response) => 
+          const gymTotal = gymResponses.reduce((acc, response) =>
             acc + (Number(response.rpe) || 0), 0);
           setGymSurveyAverages({
             rpe: Number((gymTotal / gymResponses.length).toFixed(1))
@@ -475,7 +547,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         surveyCompleted,
       };
       localStorage.setItem(
-        `${PRACTICE_DATA_KEY}${session.id}`, 
+        `${PRACTICE_DATA_KEY}${session.id}`,
         JSON.stringify(practiceData)
       );
     } catch (err) {
@@ -488,7 +560,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     if (!session?.id) return;
 
     console.log('🔄 Setting up Firebase subscription');
-    
+
     const unsubscribe = practiceDataService.subscribeToPracticeData(
       session.id,
       (practiceData, isFirst) => {
@@ -577,7 +649,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   const updateMetrics = (type, field, value) => {
     console.log('🔄 Updating metrics:', { type, field, value });
-    
+
     setMetrics(prev => ({
       ...prev,
       [type]: {
@@ -610,7 +682,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   const handleTimerAction = (index, action) => {
     const newTimers = [...timers];
-    switch(action) {
+    switch (action) {
       case 'start':
         newTimers[index].isRunning = true;
         newTimers[index].interval = setInterval(() => {
@@ -694,7 +766,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
   useEffect(() => {
     if (!session) return;
-    
+
     const savedSummaries = localStorage.getItem(`summaries_${session.id}`);
     if (savedSummaries) {
       try {
@@ -785,7 +857,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
   };
 
   const navigate = useNavigate();
-    
+
   const handleOpenSurvey = () => {
     if (!session?.id) return;
     const practiceData = {
@@ -797,7 +869,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
     try {
       localStorage.setItem(
-        `${PRACTICE_DATA_KEY}${session.id}`, 
+        `${PRACTICE_DATA_KEY}${session.id}`,
         JSON.stringify(practiceData)
       );
 
@@ -810,7 +882,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         }));
 
       localStorage.setItem(
-        `surveyPlayers_${session.id}`, 
+        `surveyPlayers_${session.id}`,
         JSON.stringify(presentPlayers)
       );
       navigate(`/survey/${session.id}`);
@@ -831,7 +903,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
     try {
       localStorage.setItem(
-        `${PRACTICE_DATA_KEY}${session.id}`, 
+        `${PRACTICE_DATA_KEY}${session.id}`,
         JSON.stringify(practiceData)
       );
 
@@ -844,7 +916,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         }));
 
       localStorage.setItem(
-        `gymSurveyPlayers_${session.id}`, 
+        `gymSurveyPlayers_${session.id}`,
         JSON.stringify(presentPlayers)
       );
       navigate(`/gym-survey/${session.id}`);
@@ -1127,7 +1199,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       disabled={isLoading}
       className={`
         py-2 px-4 rounded font-medium
-        ${isLoading 
+        ${isLoading
           ? 'bg-gray-100 text-gray-500 cursor-wait'
           : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
         }
@@ -1137,63 +1209,109 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     </button>
   );
 
+  const SyncIndicator = () => (
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${syncStatus === 'synced' ? 'bg-green-100 text-green-700' :
+      syncStatus === 'syncing' ? 'bg-blue-100 text-blue-700' :
+        'bg-red-100 text-red-700'
+      }`}>
+      {syncStatus === 'synced' && <Wifi className="w-4 h-4" />}
+      {syncStatus === 'syncing' && <RefreshCw className="w-4 h-4 animate-spin" />}
+      {syncStatus === 'error' && <WifiOff className="w-4 h-4" />}
+      <span>
+        {syncStatus === 'synced' ? 'Saved to Cloud' :
+          syncStatus === 'syncing' ? 'Syncing...' :
+            'Sync Error'}
+      </span>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-[1400px] mx-auto">
-        <header className="mb-8 flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold mb-2">Practice Session</h1>
-            <div className="text-gray-600">
-              <p>Date: {session.date}</p>
-              <p>Time: {formatSessionTime(session)}</p>
-              {session.type && <p>Type: {session.type}</p>}
+    <div className="min-h-screen bg-gray-50/50 p-4 lg:p-8 font-sans">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Practice Session</h1>
+              <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" />
+                  {session.date} • {formatSessionTime(session)}
+                </span>
+                {session.type && (
+                  <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium text-gray-600">
+                    {session.type}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <Link 
-            to="/schedule" 
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <span>←</span>
-            <span>Back to Schedule</span>
-          </Link>
+
+          <div className="flex items-center gap-3">
+            <SyncIndicator />
+            <Link
+              to="/schedule"
+              className="px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg flex items-center gap-2 transition-colors font-medium border border-gray-200"
+            >
+              <span>←</span>
+              <span>Schedule</span>
+            </Link>
+          </div>
         </header>
 
-        <div className="practice-layout">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">Attendance</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left py-2">Name</th>
-                    <th className="text-left py-2">Status</th>
-                    <th className="text-left py-2">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Attendance & Timers */}
+          <div className="lg:col-span-4 space-y-6">
+
+            {/* Attendance Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px]">
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-600" />
+                  <h2 className="font-bold text-gray-800">Attendance</h2>
+                </div>
+                <span className="text-sm font-medium text-gray-500 bg-white px-2 py-1 rounded border border-gray-100">
+                  {Object.values(attendance).filter(r => r.present).length} / {roster.length} Present
+                </span>
+              </div>
+
+              <div className="p-2 overflow-y-auto flex-1">
+                <div className="space-y-2">
                   {roster.map(player => {
                     const record = attendance[player.name] || { present: false };
-                    
+                    const isPresent = record.present;
+
                     return (
-                      <tr key={player.id} className="border-t">
-                        <td className="py-2">
-                          <span className="font-medium">{player.name}</span>
-                          {player.number && (
-                            <span className="ml-2 text-gray-500">#{player.number}</span>
-                          )}
-                        </td>
-                        <td className="py-2">
-                          <input
-                            type="checkbox"
-                            checked={record.present}
-                            onChange={e => handleAttendanceChange(player, { present: e.target.checked })}
-                            className="mr-2"
-                          />
-                          <span>{record.present ? 'Present' : 'Absent'}</span>
-                        </td>
-                        <td className="py-2">
-                          {!record.present && (
-                            <div className="flex gap-2">
+                      <div
+                        key={player.id}
+                        onClick={() => handleAttendanceChange(player, { present: !isPresent })}
+                        className={`
+                          group relative flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-200 border
+                          ${isPresent
+                            ? 'bg-green-50 border-green-200 shadow-sm hover:shadow-md hover:bg-green-100/50'
+                            : 'bg-white border-gray-200 text-gray-400 hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`
+                            w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors
+                            ${isPresent ? 'bg-green-200 text-green-800' : 'bg-gray-100 text-gray-400'}
+                          `}>
+                            {player.number || '#'}
+                          </div>
+                          <div>
+                            <span className={`font-semibold block ${isPresent ? 'text-gray-900' : 'text-gray-400'}`}>
+                              {player.name}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isPresent ? (
+                            <Check className="w-5 h-5 text-green-600" />
+                          ) : (
+                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                               <select
                                 value={record.reason || ''}
                                 onChange={e => handleAttendanceChange(player, {
@@ -1201,348 +1319,339 @@ function PracticeLive({ sessionId: sessionIdProp }) {
                                   reason: e.target.value,
                                   reasonDetails: e.target.value === 'Other' ? record.reasonDetails : ''
                                 })}
-                                className="border rounded px-2 py-1"
+                                className="text-xs border rounded px-1.5 py-1 bg-white focus:ring-2 focus:ring-indigo-500 max-w-[100px]"
                               >
-                                <option value="">Select reason...</option>
+                                <option value="">Reason...</option>
                                 <option value="Injury">Injury</option>
                                 <option value="Illness">Illness</option>
                                 <option value="Personal">Personal</option>
                                 <option value="Other">Other</option>
                               </select>
-                              {record.reason === 'Other' && (
-                                <input
-                                  type="text"
-                                  value={record.reasonDetails || ''}
-                                  onChange={e => handleAttendanceChange(player, {
-                                    present: false,
-                                    reason: 'Other',
-                                    reasonDetails: e.target.value
-                                  })}
-                                  placeholder="Details..."
-                                  className="border rounded px-2 py-1 flex-1"
-                                />
-                              )}
                             </div>
                           )}
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="mb-6 flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Timers</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => addNewTimer('time')}
-                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  + Timer
-                </button>
-                <button
-                  onClick={() => addNewTimer('count')}
-                  className="px-3 py-1 bg-orange-500 text-white rounded hover:bg-orange-600"
-                >
-                  + Counter
-                </button>
+                </div>
               </div>
             </div>
-            
-            <div className="timer-grid">
-              {timers.map((timer, index) => (
-                <div key={timer.id} className="timer-container">
-                  <div 
-                    className={`timer-circle type-${timer.type} ${timer.isRunning ? 'running' : ''}`}
-                    onClick={() => handleTimerClick(index)}
+
+            {/* Timers Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="mb-4 flex justify-between items-center border-b border-gray-100 pb-2">
+                <h2 className="font-bold text-gray-800 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-blue-600" />
+                  Timers
+                </h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => addNewTimer('time')}
+                    className="px-2 py-1 bg-blue-50 text-blue-600 text-xs font-medium rounded hover:bg-blue-100 border border-blue-100 transition-colors"
                   >
-                    <div className="timer-icon">
-                      {timer.type === 'time' ? '⏱️' : '🏀'}
-                    </div>
-                    <div className="timer-value">
-                      {timer.type === 'time' 
-                        ? formatSeconds(timer.value)
-                        : timer.value}
-                    </div>
-                    <div className="timer-label">
-                      <input
-                        type="text"
-                        value={timer.label}
-                        onChange={(e) => updateTimerLabel(index, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-center bg-transparent border-b border-transparent hover:border-gray-300 focus:border-gray-400 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  <div className="timer-controls">
-                    {timer.type === 'count' && (
-                      <button onClick={() => handleDecrementCount(index)}>-</button>
-                    )}
-                    <button onClick={() => handleResetTimer(index)}>Reset</button>
-                    <button 
-                      onClick={() => handleDeleteTimer(index)}
-                      className="danger"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                    + Timer
+                  </button>
+                  <button
+                    onClick={() => addNewTimer('count')}
+                    className="px-2 py-1 bg-orange-50 text-orange-600 text-xs font-medium rounded hover:bg-orange-100 border border-orange-100 transition-colors"
+                  >
+                    + Count
+                  </button>
                 </div>
-              ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {timers.map((timer, index) => (
+                  <div key={timer.id} className="relative group bg-gray-50 rounded-lg p-3 border border-gray-100 hover:border-gray-300 transition-all">
+                    <div
+                      className="text-center cursor-pointer"
+                      onClick={() => handleTimerClick(index)}
+                    >
+                      <div className="text-2xl mb-1">
+                        {timer.type === 'time' ? '⏱️' : '🏀'}
+                      </div>
+                      <div className={`text-xl font-mono font-bold ${timer.isRunning ? 'text-blue-600' : 'text-gray-700'}`}>
+                        {timer.type === 'time'
+                          ? formatSeconds(timer.value)
+                          : timer.value}
+                      </div>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={timer.label}
+                      onChange={(e) => updateTimerLabel(index, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full text-center text-xs bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none mt-2 text-gray-500"
+                    />
+
+                    <div className="mt-2 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {timer.type === 'count' && (
+                        <button onClick={() => handleDecrementCount(index)} className="text-xs px-2 py-0.5 bg-gray-200 rounded text-gray-600 hover:bg-gray-300">-</button>
+                      )}
+                      <button onClick={() => handleResetTimer(index)} className="text-xs px-2 py-0.5 bg-gray-200 rounded text-gray-600 hover:bg-gray-300">R</button>
+                      <button onClick={() => handleDeleteTimer(index)} className="text-xs px-2 py-0.5 bg-red-100 rounded text-red-600 hover:bg-red-200">×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="practice-main bg-white rounded-lg shadow p-8">
-            <h2 className="text-xl font-bold mb-8">Practice Summary</h2>
-              
-            <div className="mb-10">
-              <h3 className="font-semibold mb-4 text-gray-700">Practice Metrics</h3>
-              <table className="practice-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '15%' }}>Metric</th>
-                    <th style={{ width: '20%' }}>Total Time</th>
-                    <th style={{ width: '20%' }}>High Intensity</th>
-                    <th style={{ width: '15%' }}>Courts Used</th>
-                    <th style={{ width: '15%' }}>Court RPE</th>
-                    <th style={{ width: '15%' }}>Gym RPE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="font-medium">Planned</td>
-                    <td>
-                      <input 
-                        type="number" 
-                        value={metrics.planned.totalTime}
-                        onChange={e => updateMetrics('planned', 'totalTime', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.planned.highIntensity}
-                        onChange={e => updateMetrics('planned', 'highIntensity', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.planned.courtsUsed}
-                        onChange={e => updateMetrics('planned', 'courtsUsed', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.planned.rpeCourt}
-                        onChange={e => updateMetrics('planned', 'rpeCourt', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                        max="10"
-                        step="0.1"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.planned.rpeGym}
-                        onChange={e => updateMetrics('planned', 'rpeGym', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                        max="10"
-                        step="0.1"
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="font-medium">Actual</td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.actual.totalTime}
-                        onChange={e => updateMetrics('actual', 'totalTime', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.actual.highIntensity}
-                        onChange={e => updateMetrics('actual', 'highIntensity', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.actual.courtsUsed}
-                        onChange={e => updateMetrics('actual', 'courtsUsed', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.actual.rpeCourt}
-                        onChange={e => updateMetrics('actual', 'rpeCourt', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                        max="10"
-                        step="0.1"
-                      />
-                    </td>
-                    <td>
-                      <input 
-                        type="number"
-                        value={metrics.actual.rpeGym}
-                        onChange={e => updateMetrics('actual', 'rpeGym', e.target.value)}
-                        className="table-input" 
-                        min="0"
-                        max="10"
-                        step="0.1"
-                      />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          {/* Right Column: Practice Details */}
+          <div className="lg:col-span-8 space-y-6">
 
-            <div className="mb-10">
-              <h3 className="font-semibold mb-4 text-gray-700">Drill Details</h3>
-              <table className="practice-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '30%' }}>Name</th>
-                    <th style={{ width: '22%' }}>Total Time (min)</th>
-                    <th style={{ width: '22%' }}>High Intensity (min)</th>
-                    <th style={{ width: '16%' }}>Courts</th>
-                    <th style={{ width: '10%' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drillRows.map((row, index) => (
-                    <tr key={index}>
-                      <td>
+            {/* Metrics Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="mb-6 flex items-center gap-2 border-b border-gray-100 pb-4">
+                <Activity className="w-5 h-5 text-indigo-600" />
+                <h2 className="text-lg font-bold text-gray-800">Practice Metrics</h2>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b border-gray-100">
+                      <th className="pb-3 font-medium pl-2">Metric</th>
+                      <th className="pb-3 font-medium">Total Time</th>
+                      <th className="pb-3 font-medium">High Intensity</th>
+                      <th className="pb-3 font-medium">Courts Used</th>
+                      <th className="pb-3 font-medium">Court RPE</th>
+                      <th className="pb-3 font-medium">Gym RPE</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    <tr className="group hover:bg-gray-50/50">
+                      <td className="py-3 font-medium text-gray-700 pl-2">Planned</td>
+                      <td className="py-3">
                         <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => updateDrillRow(index, 'name', e.target.value)}
-                          className="table-input"
-                          placeholder="Drill name..."
+                          type="number"
+                          value={metrics.planned.totalTime}
+                          onChange={e => updateMetrics('planned', 'totalTime', e.target.value)}
+                          className="w-20 px-2 py-1 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                          min="0"
                         />
                       </td>
-                      <td>
+                      <td className="py-3">
                         <input
-                          type="text"
-                          value={row.totalTime || ''}
-                          onChange={(e) => updateDrillRow(index, 'totalTime', e.target.value)}
-                          className="table-input"
-                          placeholder=""
+                          type="number"
+                          value={metrics.planned.highIntensity}
+                          onChange={e => updateMetrics('planned', 'highIntensity', e.target.value)}
+                          className="w-20 px-2 py-1 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                          min="0"
                         />
                       </td>
-                      <td>
+                      <td className="py-3">
                         <input
-                          type="text"
-                          value={row.highIntensity || ''}
-                          onChange={(e) => updateDrillRow(index, 'highIntensity', e.target.value)}
-                          className="table-input"
-                          placeholder=""
+                          type="number"
+                          value={metrics.planned.courtsUsed}
+                          onChange={e => updateMetrics('planned', 'courtsUsed', e.target.value)}
+                          className="w-20 px-2 py-1 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                          min="0"
                         />
                       </td>
-                      <td>
+                      <td className="py-3">
                         <input
-                          type="text"
-                          value={row.courts || ''}
-                          onChange={(e) => updateDrillRow(index, 'courts', e.target.value)}
-                          className="table-input"
-                          placeholder=""
+                          type="number"
+                          value={metrics.planned.rpeCourt}
+                          onChange={e => updateMetrics('planned', 'rpeCourt', e.target.value)}
+                          className="w-20 px-2 py-1 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                          min="0"
+                          max="10"
+                          step="0.1"
                         />
                       </td>
-                      <td className="text-center">
-                        <button
-                          onClick={(() => removeDrillRow(index))}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          Remove
-                        </button>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.planned.rpeGym}
+                          onChange={e => updateMetrics('planned', 'rpeGym', e.target.value)}
+                          className="w-20 px-2 py-1 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                        />
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button
-                onClick={addDrillRow}
-                className="mt-4 w-full px-4 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded font-medium"
-              >
-                + Add Drill
-              </button>
+                    <tr className="group hover:bg-gray-50/50">
+                      <td className="py-3 font-medium text-gray-700 pl-2">Actual</td>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.actual.totalTime}
+                          onChange={e => updateMetrics('actual', 'totalTime', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all font-medium text-gray-900"
+                          min="0"
+                        />
+                      </td>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.actual.highIntensity}
+                          onChange={e => updateMetrics('actual', 'highIntensity', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all font-medium text-gray-900"
+                          min="0"
+                        />
+                      </td>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.actual.courtsUsed}
+                          onChange={e => updateMetrics('actual', 'courtsUsed', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all font-medium text-gray-900"
+                          min="0"
+                        />
+                      </td>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.actual.rpeCourt}
+                          onChange={e => updateMetrics('actual', 'rpeCourt', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all font-medium text-gray-900"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                        />
+                      </td>
+                      <td className="py-3">
+                        <input
+                          type="number"
+                          value={metrics.actual.rpeGym}
+                          onChange={e => updateMetrics('actual', 'rpeGym', e.target.value)}
+                          className="w-20 px-2 py-1 bg-white border border-gray-300 rounded shadow-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none transition-all font-medium text-gray-900"
+                          min="0"
+                          max="10"
+                          step="0.1"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="practice-controls">
-              {renderSurveyStatus()}
-              <div className="flex gap-4">
+            {/* Drill Details Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div className="mb-6 flex justify-between items-center border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-gray-800">Drill Details</h2>
+                </div>
+                <button
+                  onClick={addDrillRow}
+                  className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-sm font-medium rounded-lg hover:bg-indigo-100 border border-indigo-100 transition-colors"
+                >
+                  + Add Drill
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b border-gray-100">
+                      <th className="pb-3 w-1/3 font-medium pl-2">Name</th>
+                      <th className="pb-3 w-1/6 font-medium">Total (min)</th>
+                      <th className="pb-3 w-1/6 font-medium">High Int. (min)</th>
+                      <th className="pb-3 w-1/6 font-medium">Courts</th>
+                      <th className="pb-3 w-1/12 font-medium text-right pr-2">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {drillRows.map((row, index) => (
+                      <tr key={index} className="group hover:bg-gray-50/50">
+                        <td className="py-2 pl-2">
+                          <input
+                            type="text"
+                            value={row.name}
+                            onChange={(e) => updateDrillRow(index, 'name', e.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="Drill name..."
+                          />
+                        </td>
+                        <td className="py-2">
+                          <input
+                            type="text"
+                            value={row.totalTime || ''}
+                            onChange={(e) => updateDrillRow(index, 'totalTime', e.target.value)}
+                            className="w-20 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="py-2">
+                          <input
+                            type="text"
+                            value={row.highIntensity || ''}
+                            onChange={(e) => updateDrillRow(index, 'highIntensity', e.target.value)}
+                            className="w-20 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="py-2">
+                          <input
+                            type="text"
+                            value={row.courts || ''}
+                            onChange={(e) => updateDrillRow(index, 'courts', e.target.value)}
+                            className="w-20 px-3 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="text-right py-2 pr-2">
+                          <button
+                            onClick={(() => removeDrillRow(index))}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-50"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Actions Card */}
+            <div className="flex flex-wrap gap-3 justify-end pt-4 border-t border-gray-200">
+              {/* Controls using the new style */}
+              <div className="flex gap-3">
                 <button
                   onClick={() => navigate('/wellness')}
-                  className="py-2 px-4 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded font-medium flex items-center gap-2"
+                  className="px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg font-medium flex items-center gap-2 transition-colors border border-purple-100"
                 >
-                  <span>💪</span>
-                  <span>Daily Wellness Check</span>
+                  <Activity className="w-4 h-4" />
+                  <span>Daily Wellness</span>
                 </button>
-                <PrePracticeButton 
+                <PrePracticeButton
                   onClick={handleExportPrePracticeReport}
                   isLoading={toastMessage === 'Generating report...'}
                 />
                 <button
                   onClick={handleExportPDF}
-                  className="py-2 px-4 bg-green-100 text-green-700 hover:bg-green-200 rounded font-medium"
+                  className="px-4 py-2 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg font-medium border border-green-100"
                 >
-                  Export Summary PDF
+                  Export PDF
                 </button>
               </div>
-              <button
-                onClick={handleOpenSurvey}
-                className="py-3 px-6 bg-green-500 text-white hover:bg-green-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
-              >
-                <span>
-                  {Object.keys(surveyData || {}).length > 0 
-                    ? 'Continue Court Survey' 
-                    : 'Start Court Survey'}
-                </span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
-                </svg>
-              </button>
-              <button
-                onClick={handleOpenGymSurvey}
-                className="py-3 px-6 bg-purple-500 text-white hover:bg-purple-600 rounded-lg font-semibold text-lg shadow-sm transition-colors flex items-center gap-2"
-              >
-                <span>
-                  {Object.keys(gymSurveyData || {}).length > 0 
-                    ? 'Continue Gym Survey' 
-                    : 'Start Gym Survey'}
-                </span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path fillRule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clipRule="evenodd" />
-                </svg>
-              </button>
+
+              <div className="flex gap-3 ml-auto">
+                <button
+                  onClick={handleOpenSurvey}
+                  className="px-6 py-2.5 bg-gradient-to-r from-green-600 to-green-500 text-white hover:from-green-700 hover:to-green-600 rounded-xl font-bold font-sans shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-sm"
+                >
+                  {Object.keys(surveyData || {}).length > 0 ? 'Continue Survey' : 'Start Survey'}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
       {toastMessage && (
-        <div className="fixed bottom-4 right-4 py-2 px-4 bg-gray-800 text-white rounded-lg shadow-lg">
+        <div className="fixed bottom-6 right-6 py-3 px-5 bg-gray-900/90 text-white rounded-xl shadow-xl backdrop-blur-sm flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
           {toastMessage}
         </div>
       )}
