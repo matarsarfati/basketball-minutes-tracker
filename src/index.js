@@ -15,6 +15,7 @@ import RPEWeeklyReport from './RPEWeeklyReport';
 
 const PracticeLive = lazy(() => import('./PracticeLive'));
 const MeetingProtocol = lazy(() => import('./MeetingProtocol'));
+const CombinedSurvey = lazy(() => import('./CombinedSurvey'));
 
 const router = createBrowserRouter([
   {
@@ -48,6 +49,14 @@ const router = createBrowserRouter([
   {
     path: "/gym-survey/:sessionId",
     element: <GymSurvey />,
+  },
+  {
+    path: "/combined-survey/:sessionId",
+    element: (
+      <Suspense fallback={<div>Loading...</div>}>
+        <CombinedSurvey />
+      </Suspense>
+    ),
   },
   {
     path: "/wellness",

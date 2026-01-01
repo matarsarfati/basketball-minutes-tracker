@@ -24,6 +24,7 @@ import {
 import { practiceDataService } from './services/practiceDataService';
 import { wellnessService } from './services/wellnessService';
 import { generatePrePracticePDF, generatePracticePDF } from './pdfGenerator';
+import SurveySelectionModal from './components/SurveySelectionModal';
 
 // Simple debounce hook
 function useDebounce(value, delay) {
@@ -947,6 +948,39 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     }
   };
 
+  const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
+
+  const handleSurveySelection = (type) => {
+    setIsSurveyModalOpen(false);
+
+    // Shared Logic for Pre-populating players
+    if (!session?.id) return;
+
+    try {
+      const presentPlayers = roster
+        .filter(player => attendance[player.name]?.present)
+        .map(player => ({
+          id: player.id,
+          name: player.name,
+          number: player.number
+        }));
+
+      // Save for both/either
+      localStorage.setItem(`surveyPlayers_${session.id}`, JSON.stringify(presentPlayers));
+      localStorage.setItem(`gymSurveyPlayers_${session.id}`, JSON.stringify(presentPlayers));
+    } catch (err) {
+      console.error('Failed to save players list', err);
+    }
+
+    if (type === 'court') {
+      handleOpenSurvey();
+    } else if (type === 'gym') {
+      handleOpenGymSurvey();
+    } else if (type === 'combined') {
+      navigate(`/combined-survey/${session.id}`);
+    }
+  };
+
   const handleAttendanceChange = (player, update) => {
     setAttendance(prev => ({
       ...prev,
@@ -1672,7 +1706,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
               <div className="flex gap-3 ml-auto">
                 <button
-                  onClick={handleOpenSurvey}
+                  onClick={() => setIsSurveyModalOpen(true)}
                   className="px-6 py-2.5 bg-gradient-to-r from-green-600 to-green-500 text-white hover:from-green-700 hover:to-green-600 rounded-xl font-bold font-sans shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-sm"
                 >
                   {Object.keys(surveyData || {}).length > 0 ? 'Continue Survey' : 'Start Survey'}
@@ -1685,6 +1719,12 @@ function PracticeLive({ sessionId: sessionIdProp }) {
           </div>
         </div>
       </div>
+
+      <SurveySelectionModal
+        isOpen={isSurveyModalOpen}
+        onClose={() => setIsSurveyModalOpen(false)}
+        onSelect={handleSurveySelection}
+      />
 
       {toastMessage && (
         <div className="fixed bottom-6 right-6 py-3 px-5 bg-gray-900/90 text-white rounded-xl shadow-xl backdrop-blur-sm flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
