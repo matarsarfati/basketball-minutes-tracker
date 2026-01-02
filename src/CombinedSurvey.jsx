@@ -5,6 +5,16 @@ import { rosterService } from './services/rosterService';
 import "./SurveyForm.css";
 
 // --- Shared Constants & Helpers ---
+const SUCCESS_MESSAGES = [
+    "Now it's time for rest, you earned it.",
+    "The basket already misses you.",
+    "Great work today, champion.",
+    "Recovery is part of the process.",
+    "See you at the next practice!",
+    "Another brick in the wall of success.",
+    "Rest up, tomorrow we go again."
+];
+
 const RPE_SHORT = {
     1: "Very very light",
     2: "Very light",
@@ -82,6 +92,8 @@ export default function CombinedSurvey() {
     // State
     const [presentPlayers, setPresentPlayers] = useState([]);
     const [selectedPlayer, setSelectedPlayer] = useState("");
+    const [isLoading, setIsLoading] = useState(true);
+    const [dataError, setDataError] = useState("");
 
     // Form State
     const [courtRpe, setCourtRpe] = useState(null);
@@ -94,63 +106,52 @@ export default function CombinedSurvey() {
     const [gymStore, setGymStore] = useState({});
     const [error, setError] = useState("");
     const [showSuccess, setShowSuccess] = useState(false);
+    const [successMessage, setSuccessMessage] = useState("");
 
-    // Load Data
     // Load Data
     useEffect(() => {
         if (!sessionId) return;
 
-        // 1. Try Local Storage first for immediate render
-        let localLoaded = false;
-        try {
-            const gymPlayers = localStorage.getItem(`gymSurveyPlayers_${sessionId}`);
-            const courtPlayers = localStorage.getItem(`surveyPlayers_${sessionId}`);
-            if (gymPlayers) {
-                setPresentPlayers(JSON.parse(gymPlayers));
-                localLoaded = true;
-            }
-            else if (courtPlayers) {
-                setPresentPlayers(JSON.parse(courtPlayers));
-                localLoaded = true;
-            }
-        } catch (err) {
-            console.error('Failed to parse local players', err);
-        }
-
-        // 2. Poll Firebase for source of truth (fixes cross-device issue)
         const loadRemoteData = async () => {
+            setIsLoading(true);
+            setDataError("");
             try {
                 const [practiceData, allPlayers] = await Promise.all([
                     practiceDataService.getPracticeData(sessionId),
                     rosterService.getPlayers()
                 ]);
 
-                if (practiceData?.attendance) {
-                    // Filter roster based on attendance
+                if (!practiceData) {
+                    setDataError("Session not found. Please check the link.");
+                    return;
+                }
+
+                if (practiceData.attendance) {
+                    // Filter roster based on attendance (present: true)
                     const present = allPlayers
                         .filter(p => practiceData.attendance[p.name]?.present)
                         .map(p => ({
                             id: p.id,
                             name: p.name,
                             number: p.number
-                        }));
+                        }))
+                        .sort((a, b) => a.name.localeCompare(b.name));
 
-                    // Only update if we have data and it might differ or if local failed
-                    if (present.length > 0) {
-                        setPresentPlayers(present);
-                        // Update local storage for next time
-                        localStorage.setItem(`surveyPlayers_${sessionId}`, JSON.stringify(present));
-                    }
+                    setPresentPlayers(present);
+                } else {
+                    setPresentPlayers([]); // No attendance data yet
                 }
             } catch (err) {
                 console.error('Failed to load remote survey data', err);
+                setDataError("Failed to load session data. Please refresh.");
+            } finally {
+                setIsLoading(false);
             }
         };
 
-        // Always try to load fresh data, especially if local was empty
         loadRemoteData();
 
-        // Subscribe to Firebase Data
+        // Subscribe to Firebase Data for syncing completed status
         const unsubscribe = practiceDataService.subscribeToPracticeData(
             sessionId,
             (data) => {
@@ -191,8 +192,6 @@ export default function CombinedSurvey() {
         e.preventDefault();
         if (!selectedPlayer) return;
 
-        // We allow partial submission if user only fills one side, but ideally both
-        // For this combined view, we enforce at least one RPE to be selected
         if (courtRpe === null && gymRpe === null) {
             setError("Please fill out at least one section.");
             return;
@@ -207,7 +206,7 @@ export default function CombinedSurvey() {
                 promises.push(practiceDataService.updateSurveyResponse(sessionId, selectedPlayer, {
                     rpe: courtRpe,
                     legs: legs,
-                    notes: notes.trim(), // Shared notes
+                    notes: notes.trim(),
                     savedAt: timestamp
                 }));
             }
@@ -216,7 +215,7 @@ export default function CombinedSurvey() {
             if (gymRpe !== null) {
                 promises.push(practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, {
                     rpe: gymRpe,
-                    notes: notes.trim(), // Shared notes
+                    notes: notes.trim(),
                     savedAt: timestamp
                 }));
             }
@@ -230,6 +229,11 @@ export default function CombinedSurvey() {
             setNotes("");
             setSelectedPlayer("");
             setError("");
+
+            // Random success message
+            const randomMsg = SUCCESS_MESSAGES[Math.floor(Math.random() * SUCCESS_MESSAGES.length)];
+            setSuccessMessage(randomMsg);
+
             setShowSuccess(true);
 
         } catch (err) {
@@ -314,12 +318,30 @@ export default function CombinedSurvey() {
                         ✓
                     </div>
                     <h2 className="text-3xl font-bold text-gray-900 mb-2">Awesome!</h2>
-                    <p className="text-gray-500 mb-8">Your feedback has been saved.</p>
+                    <p className="text-gray-500 mb-4">{successMessage}</p>
                     <button
                         onClick={() => setShowSuccess(false)}
                         className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                     >
                         Next Player
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (dataError) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+                <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-red-100">
+                    <div className="text-4xl mb-4">⚠️</div>
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">Unable to Load Survey</h3>
+                    <p className="text-gray-500">{dataError}</p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+                    >
+                        Retry
                     </button>
                 </div>
             </div>
@@ -338,7 +360,7 @@ export default function CombinedSurvey() {
                         <h1 className="text-xl font-bold text-gray-900">Combined Feedback</h1>
                     </div>
                     <div className="text-sm font-medium text-gray-500">
-                        {completedCount} / {presentPlayers.length} Complete
+                        {isLoading ? '...' : `${completedCount} / ${presentPlayers.length} Complete`}
                     </div>
                 </div>
             </header>
@@ -348,21 +370,31 @@ export default function CombinedSurvey() {
                 {/* Player Selection */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Select Player</label>
-                    <select
-                        value={selectedPlayer}
-                        onChange={handlePlayerChange}
-                        className="w-full text-lg p-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all bg-gray-50"
-                    >
-                        <option value="">Choose your name...</option>
-                        {presentPlayers.map(p => {
-                            const isDone = courtStore[p.name] && gymStore[p.name];
-                            return (
-                                <option key={p.id} value={p.name}>
-                                    {p.name} {isDone ? '✓' : ''}
-                                </option>
-                            );
-                        })}
-                    </select>
+                    <div className="relative">
+                        <select
+                            value={selectedPlayer}
+                            onChange={handlePlayerChange}
+                            disabled={isLoading}
+                            className="w-full text-lg p-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+                        >
+                            <option value="">
+                                {isLoading ? "Loading players..." : "Choose your name..."}
+                            </option>
+                            {!isLoading && presentPlayers.map(p => {
+                                const isDone = courtStore[p.name] && gymStore[p.name];
+                                return (
+                                    <option key={p.id} value={p.name}>
+                                        {p.name} {isDone ? '✓' : ''}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                        {isLoading && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {selectedPlayer && (

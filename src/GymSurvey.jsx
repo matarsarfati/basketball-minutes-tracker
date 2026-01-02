@@ -6,6 +6,16 @@ import { rosterService } from './services/rosterService';
 
 const SURVEY_STORE_KEY = "practiceSurveysV1";
 
+const SUCCESS_MESSAGES = [
+  "Now it's time for rest, you earned it.",
+  "The basket already misses you.",
+  "Great work today, champion.",
+  "Recovery is part of the process.",
+  "See you at the next practice!",
+  "Another brick in the wall of success.",
+  "Rest up, tomorrow we go again."
+];
+
 const GYM_RPE_SHORT = {
   1: "Very light",
   2: "Light",
@@ -99,65 +109,59 @@ export default function GymSurvey() {
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataError, setDataError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     if (!sessionId) return;
 
-    // Load initial data from localStorage as fallback
-    const localData = localStorage.getItem(`gymSurveyPlayers_${sessionId}`);
-    if (localData) {
-      try {
-        const parsedData = JSON.parse(localData);
-        setPlayers(parsedData);
-      } catch (err) {
-        console.error('Failed to parse local gym survey data:', err);
-      }
-    }
-
-    // Fetch Remote Data (Fix for cross-device)
+    // Fetch Remote Data
     const loadRemoteData = async () => {
+      setIsLoading(true);
+      setDataError("");
       try {
         const [practiceData, allPlayers] = await Promise.all([
           practiceDataService.getPracticeData(sessionId),
           rosterService.getPlayers()
         ]);
 
-        if (practiceData?.attendance) {
+        if (!practiceData) {
+          setDataError("Session not found.");
+          return;
+        }
+
+        if (practiceData.attendance) {
           const present = allPlayers
             .filter(p => practiceData.attendance[p.name]?.present)
             .map(p => ({
               id: p.id,
               name: p.name,
               number: p.number
-            }));
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
 
-          if (present.length > 0) {
-            setPlayers(present); // Note: GymSurvey uses 'players' state, not 'presentPlayers'
-            localStorage.setItem(`gymSurveyPlayers_${sessionId}`, JSON.stringify(present));
-          }
+          setPlayers(present);
+          // Also update localStorage as backup for next reload (optional, but requested to remove dependency)
+          // localStorage.setItem(`gymSurveyPlayers_${sessionId}`, JSON.stringify(present));
+        } else {
+          setPlayers([]);
         }
       } catch (err) {
         console.error('Failed to load remote gym survey data', err);
+        setDataError("Failed to load session data.");
+      } finally {
+        setIsLoading(false);
       }
     };
     loadRemoteData();
 
-    // Load initial data from Firebase
-    practiceDataService.getPracticeData(sessionId)
-      .then(practiceData => {
-        if (practiceData?.gymSurveyData) {
-          setSubmitted(practiceData.gymSurveyData);
-        }
-      })
-      .catch(console.error);
-
-    // Set up real-time listener
+    // Set up real-time listener for submissions
     const unsubscribe = practiceDataService.subscribeToPracticeData(
       sessionId,
       (practiceData) => {
         if (practiceData?.gymSurveyData) {
           setSubmitted(practiceData.gymSurveyData);
-
           // Backup to localStorage
           try {
             localStorage.setItem(
@@ -281,11 +285,14 @@ export default function GymSurvey() {
         [selectedPlayer]: surveyData
       }));
 
-      // Reset form - don't show success screen
+      // Reset form
       setRpe(null);
       setNotes('');
       setSelectedPlayer('');
-      // Don't set showSuccess to true - stay on form
+
+      const randomMsg = SUCCESS_MESSAGES[Math.floor(Math.random() * SUCCESS_MESSAGES.length)];
+      setSuccessMessage(randomMsg);
+      setShowSuccess(true);
 
       console.log('✅ Gym survey saved successfully for:', selectedPlayer);
     } catch (err) {
@@ -295,6 +302,52 @@ export default function GymSurvey() {
   };
 
   const pendingPlayers = players.filter(p => !submitted[p.name]);
+
+  if (showSuccess) {
+    return (
+      <div className="survey-form">
+        <div className="survey-wrap">
+          <div className="survey-card success-wrap">
+            <div className="success-title">✅ Response Saved!</div>
+            <p className="mb-4 text-center text-gray-600">{successMessage}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSuccess(false);
+                setSelectedPlayer('');
+                setRpe(null);
+                setNotes('');
+              }}
+              className="survey-primary w-full"
+              style={{ backgroundColor: '#8b5cf6' }}
+            >
+              Next Player →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (dataError) {
+    return (
+      <div className="survey-form">
+        <div className="survey-wrap">
+          <div className="survey-card text-center">
+            <div className="text-4xl mb-4">⚠️</div>
+            <h3>Unable to load survey</h3>
+            <p className="text-red-500">{dataError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="survey-form">
@@ -306,51 +359,40 @@ export default function GymSurvey() {
 
           <h1 className="survey-title">Gym Session Feedback</h1>
 
-          <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <div className="status-header">
-              <span className="text-2xl font-bold text-purple-600">
-                {Object.keys(submitted).length} of {players.length} players completed
-              </span>
-            </div>
-            {pendingPlayers.length > 0 && (
-              <div className="status-body">
-                <div className="status-label">Still waiting for:</div>
-                <div className="flex flex-wrap gap-2">
-                  {pendingPlayers.map(player => (
-                    <span
-                      key={player.name}
-                      className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
-                    >
-                      {player.name} {player.number ? `#${player.number}` : ''}
-                    </span>
-                  ))}
-                </div>
+          {/* Conditional Status Section */}
+          {!isLoading && (
+            <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="status-header">
+                <span className="text-2xl font-bold text-purple-600">
+                  {Object.keys(submitted).length} of {players.length} players completed
+                </span>
               </div>
-            )}
-          </div>
-
-          {showSuccess ? (
-            <div className="success-wrap">
-              <div className="success-title">✅ Response Saved!</div>
-              <p className="mb-4">Hand the phone to the next player.</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSuccess(false);
-                  setSelectedPlayer('');
-                  setRpe(null);
-                  setNotes('');
-                }}
-                className="survey-primary w-full"
-                style={{ backgroundColor: '#8b5cf6' }}
-              >
-                Next Player →
-              </button>
+              {pendingPlayers.length > 0 ? (
+                <div className="status-body">
+                  <div className="status-label">Still waiting for:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {pendingPlayers.map(player => (
+                      <span
+                        key={player.name}
+                        className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
+                      >
+                        {player.name} {player.number ? `#${player.number}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 text-green-600 font-medium text-center">
+                  ✅ All present players have completed the survey!
+                </div>
+              )}
             </div>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Player</label>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label>Player</label>
+              <div className="relative">
                 <select
                   value={selectedPlayer}
                   onChange={e => {
@@ -366,42 +408,48 @@ export default function GymSurvey() {
                   }}
                   className="player-select"
                   required
+                  disabled={isLoading}
                 >
-                  <option value="">Choose player...</option>
-                  {players.map(p => (
+                  <option value="">{isLoading ? "Loading players..." : "Choose player..."}</option>
+                  {!isLoading && players.map(p => (
                     <option key={p.name} value={p.name}>
                       {p.name} {submitted[p.name] ? '✓' : ''}
                     </option>
                   ))}
                 </select>
+                {isLoading && (
+                  <div className="absolute right-3 top-3">
+                    <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div className="form-group">
-                <label>{QUESTION_LABELS.rpe}</label>
-                {renderControl("rpe", rpe, setRpe)}
-              </div>
+            <div className="form-group">
+              <label>{QUESTION_LABELS.rpe}</label>
+              {renderControl("rpe", rpe, setRpe)}
+            </div>
 
-              <div className="form-group">
-                <label>Notes (Optional)</label>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  className="notes-input"
-                  rows={3}
-                  placeholder="Any additional comments..."
-                />
-              </div>
+            <div className="form-group">
+              <label>Notes (Optional)</label>
+              <textarea
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                className="notes-input"
+                rows={3}
+                placeholder="Any additional comments..."
+              />
+            </div>
 
-              <button
-                type="submit"
-                className="survey-primary"
-                style={{ backgroundColor: '#8b5cf6' }}
-                disabled={!selectedPlayer || rpe === null}
-              >
-                Save Response
-              </button>
-            </form>
-          )}
+            <button
+              type="submit"
+              className="survey-primary"
+              style={{ backgroundColor: '#8b5cf6' }}
+              disabled={!selectedPlayer || rpe === null}
+            >
+              Save Response
+            </button>
+          </form>
         </div>
       </div>
     </div>

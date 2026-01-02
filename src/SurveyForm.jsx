@@ -1,9 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { practiceDataService } from './services/practiceDataService';
+import { rosterService } from './services/rosterService';
 import "./SurveyForm.css";
 
 const STORE_KEY = "practiceSurveysV1";
+
+const SUCCESS_MESSAGES = [
+  "Now it's time for rest, you earned it.",
+  "The basket already misses you.",
+  "Great work today, champion.",
+  "Recovery is part of the process.",
+  "See you at the next practice!",
+  "Another brick in the wall of success.",
+  "Rest up, tomorrow we go again."
+];
 
 const RPE_SHORT = {
   1: "Very very light",
@@ -117,6 +128,7 @@ const styles = {
 const QUESTION_LABELS = {
   rpe: "Session Intensity (RPE) — 1 to 10",
   legs: "How heavy do your legs feel — 1 to 10",
+  gymRpe: "Gym Intensity (RPE)"
 };
 
 export default function SurveyForm() {
@@ -142,21 +154,52 @@ export default function SurveyForm() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataError, setDataError] = useState("");
 
   useEffect(() => {
     if (!sessionId) return;
 
-    // Load initial data from localStorage as fallback
-    const localData = localStorage.getItem(`surveyPlayers_${sessionId}`);
-    if (localData) {
+    // Fetch Remote Data
+    const loadRemoteData = async () => {
+      setIsLoading(true);
+      setDataError("");
       try {
-        const parsedData = JSON.parse(localData);
-        setPresentPlayers(parsedData);
-        // Don't auto-select first player - keep selectedPlayer empty
+        const [practiceData, allPlayers] = await Promise.all([
+          practiceDataService.getPracticeData(sessionId),
+          rosterService.getPlayers()
+        ]);
+
+        if (!practiceData) {
+          setDataError("Session not found. Please check the link.");
+          return;
+        }
+
+        if (practiceData.attendance) {
+          const present = allPlayers
+            .filter(p => practiceData.attendance[p.name]?.present)
+            .map(p => ({
+              id: p.id,
+              name: p.name,
+              number: p.number
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+          setPresentPlayers(present);
+          // Also update localStorage as backup
+          // localStorage.setItem(`surveyPlayers_${sessionId}`, JSON.stringify(present));
+        } else {
+          setPresentPlayers([]);
+        }
       } catch (err) {
-        console.error('Failed to parse local survey data:', err);
+        console.error('Failed to load remote survey data', err);
+        setDataError("Failed to load session data.");
+      } finally {
+        setIsLoading(false);
       }
-    }
+    };
+    loadRemoteData();
 
     // Set up real-time listener for Firebase updates
     const unsubscribe = practiceDataService.subscribeToPracticeData(
@@ -220,12 +263,10 @@ export default function SurveyForm() {
       setNotes('');
       setSelectedPlayer('');
       setError('');
-      // Don't set showSuccess to true - stay on form
 
-      // Show brief success feedback (optional)
-      const tempSuccess = error;
-      setError('✅ Response saved!');
-      setTimeout(() => setError(''), 2000);
+      const randomMsg = SUCCESS_MESSAGES[Math.floor(Math.random() * SUCCESS_MESSAGES.length)];
+      setSuccessMessage(randomMsg);
+      setShowSuccess(true);
 
     } catch (err) {
       console.error('Failed to save survey:', err);
@@ -340,6 +381,26 @@ export default function SurveyForm() {
     );
   };
 
+  if (dataError) {
+    return (
+      <div className="survey-form">
+        <div className="survey-wrap">
+          <div className="survey-card text-center">
+            <div className="text-4xl mb-4">⚠️</div>
+            <h3>Unable to load survey</h3>
+            <p className="text-red-500">{dataError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="survey-form">
       <div className="survey-wrap">
@@ -358,58 +419,60 @@ export default function SurveyForm() {
           <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
 
           {/* Enhanced Status Section */}
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <div className="text-center mb-3">
-              <span className="text-2xl font-bold text-blue-600">
-                {Object.keys(store[sessionId] || {}).length}
-              </span>
-              <span className="text-gray-600"> of </span>
-              <span className="text-2xl font-bold text-blue-600">
-                {presentPlayers.length}
-              </span>
-              <span className="text-gray-600"> players completed</span>
-            </div>
+          {!isLoading && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-center mb-3">
+                <span className="text-2xl font-bold text-blue-600">
+                  {Object.keys(store[sessionId] || {}).length}
+                </span>
+                <span className="text-gray-600"> of </span>
+                <span className="text-2xl font-bold text-blue-600">
+                  {presentPlayers.length}
+                </span>
+                <span className="text-gray-600"> players completed</span>
+              </div>
 
-            {(() => {
-              const completedNames = new Set(Object.keys(store[sessionId] || {}));
-              const pendingPlayers = presentPlayers.filter(
-                player => !completedNames.has(player.name)
-              );
+              {(() => {
+                const completedNames = new Set(Object.keys(store[sessionId] || {}));
+                const pendingPlayers = presentPlayers.filter(
+                  player => !completedNames.has(player.name)
+                );
 
-              if (pendingPlayers.length > 0) {
-                return (
-                  <div className="mt-3 pt-3 border-t border-blue-200">
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Still waiting for:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {pendingPlayers.map(player => (
-                        <span
-                          key={player.id}
-                          className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
-                        >
-                          {player.name} {player.number ? `#${player.number}` : ''}
-                        </span>
-                      ))}
+                if (pendingPlayers.length > 0) {
+                  return (
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        Still waiting for:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {pendingPlayers.map(player => (
+                          <span
+                            key={player.id}
+                            className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
+                          >
+                            {player.name} {player.number ? `#${player.number}` : ''}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              } else {
-                return (
-                  <div className="mt-3 pt-3 border-t border-blue-200">
-                    <p className="text-sm font-medium text-green-600 text-center">
-                      ✅ All players have completed the survey!
-                    </p>
-                  </div>
-                );
-              }
-            })()}
-          </div>
+                  );
+                } else {
+                  return (
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-sm font-medium text-green-600 text-center">
+                        ✅ All players have completed the survey!
+                      </p>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+          )}
 
           {showSuccess ? (
             <div className="success-wrap">
               <div className="success-title">✅ Response Saved!</div>
-              <p className="mb-4">Hand the phone to the next player.</p>
+              <p className="mb-4 text-center text-gray-600">{successMessage}</p>
               <button
                 type="button"
                 onClick={() => {
@@ -428,23 +491,30 @@ export default function SurveyForm() {
           ) : (
             <div className="survey-wrap">
               <div className="survey-card">
-                <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
                 <form onSubmit={handleSubmit}>
                   <div className="mb-6">
                     <label className="block text-sm font-medium mb-2">Select Player</label>
-                    <select
-                      value={selectedPlayer}
-                      onChange={handlePlayerChange}
-                      className="w-full p-2 border rounded"
-                      required
-                    >
-                      <option value="">Choose player...</option>
-                      {presentPlayers.map((player) => (
-                        <option key={player.id} value={player.name}>
-                          {player.name} {player.number ? `#${player.number}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <select
+                        value={selectedPlayer}
+                        onChange={handlePlayerChange}
+                        className="w-full p-2 border rounded"
+                        required
+                        disabled={isLoading}
+                      >
+                        <option value="">{isLoading ? "Loading players..." : "Choose player..."}</option>
+                        {!isLoading && presentPlayers.map((player) => (
+                          <option key={player.id} value={player.name}>
+                            {player.name} {player.number ? `#${player.number}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {isLoading && (
+                        <div className="absolute right-3 top-3">
+                          <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {renderControl("rpe", rpe, setRpe)}
