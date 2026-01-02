@@ -565,13 +565,21 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     const unsubscribe = practiceDataService.subscribeToPracticeData(
       session.id,
       (practiceData, isFirst) => {
+        const isDeepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
         if (practiceData?.metrics) {
-          console.log('📥 Updating metrics state:', {
-            isFirst,
-            metrics: practiceData.metrics
+          setMetrics(prev => {
+            if (isDeepEqual(prev, practiceData.metrics)) {
+              // Skipping update as data is identical
+              return prev;
+            }
+            console.log('📥 Updating metrics state:', {
+              isFirst,
+              metrics: practiceData.metrics
+            });
+            return practiceData.metrics;
           });
 
-          setMetrics(practiceData.metrics);
           if (isFirst) {
             setIsMetricsLoaded(true);
             setIsInitialLoad(false);
@@ -580,56 +588,72 @@ function PracticeLive({ sessionId: sessionIdProp }) {
 
         // Handle court survey data updates
         if (practiceData?.surveyData) {
-          console.log('📥 Updating court survey data:', {
-            responseCount: Object.keys(practiceData.surveyData).length
+          // Survey data usually comes from other users, ok to update
+          // But we can still protect it
+          setSurveyData(prev => {
+            if (isDeepEqual(prev, practiceData.surveyData)) return prev;
+            console.log('📥 Updating court survey data:', {
+              responseCount: Object.keys(practiceData.surveyData).length
+            });
+            return practiceData.surveyData;
           });
 
-          setSurveyData(practiceData.surveyData);
+          // Trigger side effect for averages (this is calculated state, ok to run if surveyData changes)
+          // We'll trust the setSurveyData update to trigger re-renders if needed, 
+          // but we need to update averages if data changed. 
+          // Actually, the original code computed averages inside the callback. 
+          // Let's keep that logic but only if we actually have new data.
+          // However, calculating averages is cheap, we can do it.
 
-          // Calculate and update averages
-          const responses = Object.values(practiceData.surveyData);
-          if (responses.length > 0) {
-            const totals = responses.reduce((acc, response) => ({
-              rpe: acc.rpe + (Number(response.rpe) || 0),
-              legs: acc.legs + (Number(response.legs) || 0)
-            }), { rpe: 0, legs: 0 });
+          if (practiceData.surveyData) {
+            const responses = Object.values(practiceData.surveyData);
+            if (responses.length > 0) {
+              const totals = responses.reduce((acc, response) => ({
+                rpe: acc.rpe + (Number(response.rpe) || 0),
+                legs: acc.legs + (Number(response.legs) || 0)
+              }), { rpe: 0, legs: 0 });
 
-            setSurveyAverages({
-              rpe: Number((totals.rpe / responses.length).toFixed(1)),
-              legs: Number((totals.legs / responses.length).toFixed(1))
-            });
+              setSurveyAverages({
+                rpe: Number((totals.rpe / responses.length).toFixed(1)),
+                legs: Number((totals.legs / responses.length).toFixed(1))
+              });
+            }
           }
         }
 
         // Handle attendance updates
         if (practiceData?.attendance) {
           setAttendance(prev => {
-            // Merge with previous to preserve local-only transient states if any, 
-            // but normally we trust the server. 
-            // However, to be safe against race conditions where we might have just clicked 
-            // but not synced yet, we rely on the debounce. 
-            // The service already filters out our own recent echoes.
+            if (isDeepEqual(prev, practiceData.attendance)) return prev;
             return practiceData.attendance;
           });
         }
 
         // Handle drill rows updates
         if (practiceData?.drillRows) {
-          setDrillRows(practiceData.drillRows);
+          setDrillRows(prev => {
+            if (isDeepEqual(prev, practiceData.drillRows)) return prev;
+            return practiceData.drillRows;
+          });
         }
 
         // Handle survey completion status
         if (typeof practiceData?.surveyCompleted !== 'undefined') {
-          setSurveyCompleted(practiceData.surveyCompleted);
+          setSurveyCompleted(prev => {
+            if (prev === practiceData.surveyCompleted) return prev;
+            return practiceData.surveyCompleted;
+          });
         }
 
         // Handle gym survey data updates
         if (practiceData?.gymSurveyData) {
-          console.log('📥 Updating gym survey data:', {
-            responseCount: Object.keys(practiceData.gymSurveyData).length
+          setGymSurveyData(prev => {
+            if (isDeepEqual(prev, practiceData.gymSurveyData)) return prev;
+            console.log('📥 Updating gym survey data:', {
+              responseCount: Object.keys(practiceData.gymSurveyData).length
+            });
+            return practiceData.gymSurveyData;
           });
-
-          setGymSurveyData(practiceData.gymSurveyData);
 
           // Calculate and update gym averages
           const responses = Object.values(practiceData.gymSurveyData);
