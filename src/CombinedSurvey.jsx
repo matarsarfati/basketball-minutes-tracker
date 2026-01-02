@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { practiceDataService } from './services/practiceDataService';
+import { rosterService } from './services/rosterService';
 import "./SurveyForm.css";
 
 // --- Shared Constants & Helpers ---
@@ -95,23 +96,59 @@ export default function CombinedSurvey() {
     const [showSuccess, setShowSuccess] = useState(false);
 
     // Load Data
+    // Load Data
     useEffect(() => {
         if (!sessionId) return;
 
-        // Load players from local storage (set by PracticeLive)
-        // We prefer the gym list if available, or just surveyPlayers
-        const gymPlayers = localStorage.getItem(`gymSurveyPlayers_${sessionId}`);
-        const courtPlayers = localStorage.getItem(`surveyPlayers_${sessionId}`);
-
+        // 1. Try Local Storage first for immediate render
+        let localLoaded = false;
         try {
+            const gymPlayers = localStorage.getItem(`gymSurveyPlayers_${sessionId}`);
+            const courtPlayers = localStorage.getItem(`surveyPlayers_${sessionId}`);
             if (gymPlayers) {
                 setPresentPlayers(JSON.parse(gymPlayers));
-            } else if (courtPlayers) {
+                localLoaded = true;
+            }
+            else if (courtPlayers) {
                 setPresentPlayers(JSON.parse(courtPlayers));
+                localLoaded = true;
             }
         } catch (err) {
-            console.error('Failed to parse players', err);
+            console.error('Failed to parse local players', err);
         }
+
+        // 2. Poll Firebase for source of truth (fixes cross-device issue)
+        const loadRemoteData = async () => {
+            try {
+                const [practiceData, allPlayers] = await Promise.all([
+                    practiceDataService.getPracticeData(sessionId),
+                    rosterService.getPlayers()
+                ]);
+
+                if (practiceData?.attendance) {
+                    // Filter roster based on attendance
+                    const present = allPlayers
+                        .filter(p => practiceData.attendance[p.name]?.present)
+                        .map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            number: p.number
+                        }));
+
+                    // Only update if we have data and it might differ or if local failed
+                    if (present.length > 0) {
+                        setPresentPlayers(present);
+                        // Update local storage for next time
+                        localStorage.setItem(`surveyPlayers_${sessionId}`, JSON.stringify(present));
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load remote survey data', err);
+            }
+        };
+
+        // Always try to load fresh data, especially if local was empty
+        loadRemoteData();
 
         // Subscribe to Firebase Data
         const unsubscribe = practiceDataService.subscribeToPracticeData(

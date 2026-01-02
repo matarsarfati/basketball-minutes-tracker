@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import "./SurveyForm.css";
 import { practiceDataService } from './services/practiceDataService';
+import { rosterService } from './services/rosterService';
 
 const SURVEY_STORE_KEY = "practiceSurveysV1";
 
@@ -108,11 +109,38 @@ export default function GymSurvey() {
       try {
         const parsedData = JSON.parse(localData);
         setPlayers(parsedData);
-        // Don't auto-select first player - keep selectedPlayer empty
       } catch (err) {
         console.error('Failed to parse local gym survey data:', err);
       }
     }
+
+    // Fetch Remote Data (Fix for cross-device)
+    const loadRemoteData = async () => {
+      try {
+        const [practiceData, allPlayers] = await Promise.all([
+          practiceDataService.getPracticeData(sessionId),
+          rosterService.getPlayers()
+        ]);
+
+        if (practiceData?.attendance) {
+          const present = allPlayers
+            .filter(p => practiceData.attendance[p.name]?.present)
+            .map(p => ({
+              id: p.id,
+              name: p.name,
+              number: p.number
+            }));
+
+          if (present.length > 0) {
+            setPlayers(present); // Note: GymSurvey uses 'players' state, not 'presentPlayers'
+            localStorage.setItem(`gymSurveyPlayers_${sessionId}`, JSON.stringify(present));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load remote gym survey data', err);
+      }
+    };
+    loadRemoteData();
 
     // Load initial data from Firebase
     practiceDataService.getPracticeData(sessionId)
@@ -204,7 +232,7 @@ export default function GymSurvey() {
             </span>
           </div>
           <div className="scaleRow">
-            {[1,2,3,4,5,6,7,8,9,10].map((level) => {
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => {
               const selected = hasValue && level === displayValue;
               return (
                 <button
@@ -238,7 +266,7 @@ export default function GymSurvey() {
     try {
       // Save to Firebase FIRST
       await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, surveyData);
-      
+
       // Then save to localStorage as backup
       const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
       store[`${sessionId}_gym`] = {
