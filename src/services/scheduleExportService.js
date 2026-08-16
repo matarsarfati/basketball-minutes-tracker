@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // src/services/scheduleExportService.js
 import { jsPDF } from "jspdf";
 

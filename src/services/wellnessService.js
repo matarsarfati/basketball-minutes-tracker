@@ -6,6 +6,12 @@ const getTodayDate = () => {
   return today.toISOString().split('T')[0];
 };
 
+const getPath = (date) => {
+  const teamId = localStorage.getItem('activeTeamId');
+  if (!teamId) return `wellness_backup/${date}`; // Fallback if no team is selected
+  return `teams/${teamId}/wellness/${date}`;
+};
+
 const calculateAverages = (responses) => {
   if (!responses || Object.keys(responses).length === 0) {
     return { sleep: 0, fatigue: 0, soreness: 0 };
@@ -18,7 +24,7 @@ const calculateAverages = (responses) => {
   }), { sleep: 0, fatigue: 0, soreness: 0 });
 
   const count = Object.keys(responses).length;
-  
+
   return {
     sleep: Math.round((sums.sleep / count) * 10) / 10,
     fatigue: Math.round((sums.fatigue / count) * 10) / 10,
@@ -30,9 +36,9 @@ export const wellnessService = {
   async submitWellnessCheck(playerName, data) {
     try {
       const date = getTodayDate();
-      const docRef = doc(db, 'wellness', date);
+      const docRef = doc(db, getPath(date));
       const docSnap = await getDoc(docRef);
-      
+
       const currentData = docSnap.exists() ? docSnap.data() : null;
       const newResponses = {
         ...(currentData?.responses || {}),
@@ -74,12 +80,22 @@ export const wellnessService = {
 
   async getWellnessData(date) {
     try {
-      const docRef = doc(db, 'wellness', date);
+      const docRef = doc(db, getPath(date));
       const docSnap = await getDoc(docRef);
       return docSnap.exists() ? docSnap.data() : null;
     } catch (error) {
       console.error('Error getting wellness data:', error);
       return null;
+    }
+  },
+
+  async clearWellnessData(date) {
+    try {
+      const docRef = doc(db, getPath(date));
+      await setDoc(docRef, { date, responses: {}, averages: { sleep: 0, fatigue: 0, soreness: 0 }, completedCount: 0 });
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 };

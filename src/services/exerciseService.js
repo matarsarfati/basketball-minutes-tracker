@@ -1,3 +1,7 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable jsx-a11y/img-redundant-alt */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-undef */
 import { collection, doc, setDoc, getDoc, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../config/firebase';

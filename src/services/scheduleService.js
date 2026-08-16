@@ -1,13 +1,51 @@
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const SCHEDULE_COLLECTION = 'schedule';
 
 export const scheduleService = {
-  async addScheduleEvent(eventData) {
+  getSchedulePath(teamId = null) {
+    const id = teamId || localStorage.getItem('activeTeamId');
+    if (!id) return 'schedule_backup';
+    return `teams/${id}/schedules`;
+  },
+
+
+  async addScheduleEventsBatch(events, teamId = null) {
+    if (!events || events.length === 0) return;
+    const colRef = collection(db, this.getSchedulePath(teamId));
+
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < events.length; i += CHUNK_SIZE) {
+      const chunk = events.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach(event => {
+        const newDocRef = doc(colRef);
+        batch.set(newDocRef, event);
+      });
+      await batch.commit();
+    }
+  },
+
+  async deleteScheduleEventsBatch(eventIds, teamId = null) {
+    if (!eventIds || eventIds.length === 0) return;
+
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
+      const chunk = eventIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach(id => {
+        const eventRef = doc(db, this.getSchedulePath(teamId), id);
+        batch.delete(eventRef);
+      });
+      await batch.commit();
+    }
+  },
+
+  async addScheduleEvent(eventData, teamId = null) {
     console.log('Attempting to add a new schedule event:', eventData);
     try {
-      const docRef = await addDoc(collection(db, SCHEDULE_COLLECTION), eventData);
+      const docRef = await addDoc(collection(db, this.getSchedulePath(teamId)), eventData);
       console.log('Event successfully added. Document ID:', docRef.id);
       return docRef.id;
     } catch (error) {
@@ -16,13 +54,13 @@ export const scheduleService = {
     }
   },
 
-  async getScheduleEvents() {
+  async getScheduleEvents(teamId = null) {
     console.log('Fetching all schedule events...');
     try {
-      const querySnapshot = await getDocs(collection(db, SCHEDULE_COLLECTION));
+      const querySnapshot = await getDocs(collection(db, this.getSchedulePath(teamId)));
       const events = querySnapshot.docs.map(doc => ({
         ...doc.data(),
-        firebaseId: doc.id  // Ensure this is included
+        firebaseId: doc.id
       }));
       console.log('Loaded events with IDs:', events.map(e => ({ id: e.id, firebaseId: e.firebaseId })));
       return events;
@@ -32,9 +70,9 @@ export const scheduleService = {
     }
   },
 
-  async updateScheduleEvent(eventId, updatedData) {
+  async updateScheduleEvent(eventId, updatedData, teamId = null) {
     try {
-      const eventRef = doc(db, SCHEDULE_COLLECTION, eventId);
+      const eventRef = doc(db, this.getSchedulePath(teamId), eventId);
       await updateDoc(eventRef, updatedData);
     } catch (error) {
       console.error('Error updating schedule event:', error);
@@ -42,9 +80,9 @@ export const scheduleService = {
     }
   },
 
-  async deleteScheduleEvent(eventId) {
+  async deleteScheduleEvent(eventId, teamId = null) {
     try {
-      const eventRef = doc(db, SCHEDULE_COLLECTION, eventId);
+      const eventRef = doc(db, this.getSchedulePath(teamId), eventId);
       await deleteDoc(eventRef);
     } catch (error) {
       console.error('Error deleting schedule event:', error);
@@ -52,9 +90,9 @@ export const scheduleService = {
     }
   },
 
-  async verifyEvent(eventId) {
+  async verifyEvent(eventId, teamId = null) {
     try {
-      const eventRef = doc(db, SCHEDULE_COLLECTION, eventId);
+      const eventRef = doc(db, this.getSchedulePath(teamId), eventId);
       const docSnap = await getDoc(eventRef);
 
       if (docSnap.exists()) {
@@ -95,8 +133,6 @@ export const scheduleService = {
     }
   }
 };
-
-// Initialize test event immediately
 scheduleService.initializeTestEvent().then(() => {
   console.log('Schedule collection initialization complete');
 });

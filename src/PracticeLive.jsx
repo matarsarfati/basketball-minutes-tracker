@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable default-case */
 /* eslint no-use-before-define: ["error", { "functions": true, "classes": true, "variables": true }] */
 // src/PracticeLive.jsx
 import React, {
@@ -1266,7 +1268,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
       <div className="p-8 text-center">
         <h2 className="text-xl font-bold mb-4">Session not found</h2>
         <p className="mb-4">No session data available.</p>
-        <Link to="/" className="text-blue-500 hover:underline">
+        <Link to="/dashboard" className="text-blue-500 hover:underline">
           Return to Home
         </Link>
       </div>

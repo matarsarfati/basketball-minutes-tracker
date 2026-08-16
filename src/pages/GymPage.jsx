@@ -1,23 +1,33 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PlanBuilderModal from '../components/gym/PlanBuilderModal';
 import IndividualPlanBuilderModal from '../components/gym/IndividualPlanBuilderModal';
 import ExerciseLibrarySettings from '../components/gym/ExerciseLibrarySettings';
 import SidePanelPlans from '../components/gym/SidePanelPlans';
-import { savePlans, loadPlans, savePlanToFirestore } from '../services/planService';
+import { savePlans, savePlanToFirestore } from '../services/planService';
 import {
   uploadExerciseImage,
-  updateExerciseOrder,
   fetchMuscleGroups,    // Add this
   saveMuscleGroups     // Add this
 } from '../services/exerciseService';
 import ImageUploadModal from '../components/gym/ImageUploadModal';
 import { loadExercises, saveExercises } from '../services/firestoreService';
 import ExerciseEditModal from '../components/gym/ExerciseEditModal'; // Changed from MuscleGroupEditModal
-import MergeImageModal from '../components/gym/MergeImageModal';
-import { getGymGroups, createGymGroup, deleteGymGroup } from '../services/groupService'; // New Import
-import { loadPlansFromFirestore } from '../services/planService'; // Import the new loader
+import { loadPlansFromFirestore } from '../services/planService';
+import { useTeam } from '../context/TeamContext';
 
+const defaultMuscleGroups = [
+  { name: 'Plyometric', rows: 2 },
+  { name: 'Functional Power', rows: 2 },
+  { name: 'Legs', rows: 2 },
+  { name: 'Push', rows: 2 },
+  { name: 'Pull', rows: 2 },
+  { name: 'Arms', rows: 2 },
+  { name: 'Core', rows: 2 },
+  { name: 'Calf', rows: 2 },
+  { name: 'Glutes', rows: 2 },
+  { name: 'Shoulders', rows: 2 }
+];
 const GymPage = () => {
   const [searchParams] = useSearchParams();
   const urlPlanId = searchParams.get('planId');
@@ -31,35 +41,8 @@ const GymPage = () => {
   }, []);
 
   // Default muscle groups - source of truth
-  const defaultMuscleGroups = [
-    { name: 'Plyometric', rows: 2 },
-    { name: 'Functional Power', rows: 2 },
-    { name: 'Legs', rows: 2 },
-    { name: 'Push', rows: 2 },
-    { name: 'Pull', rows: 2 },
-    { name: 'Arms', rows: 2 },
-    { name: 'Core', rows: 2 },
-    { name: 'Calf', rows: 2 },
-    { name: 'Glutes', rows: 2 },
-    { name: 'Shoulders', rows: 2 }
-  ];
 
   // Category fix map for common typos
-  const categoryFixMap = {
-    'Playomtric': 'Plyometric',
-    'Playometric': 'Plyometric',
-    'Sholders': 'Shoulders',
-    'Shoulder': 'Shoulders',
-    'Uncategorized': 'Other',
-    'arm': 'Arms',
-    'leg': 'Legs',
-    'push': 'Push',
-    'pull': 'Pull',
-    'core': 'Core',
-    'calf': 'Calf',
-    'glutes': 'Glutes',
-    'glute': 'Glutes'
-  };
 
   // State declarations
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,56 +68,13 @@ const GymPage = () => {
   const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
   const [editingExercise, setEditingExercise] = useState(null);
   const [showSavedPlansPanel, setShowSavedPlansPanel] = useState(false);
-  const [showMergeModal, setShowMergeModal] = useState(false);
-  // Group State
-  const [gymGroups, setGymGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
-  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
+  const { activeTeamId } = useTeam();
 
   // Add safety check helper
-  const isValidGroup = useCallback((group) => {
-    return group && typeof group === 'object' && typeof group.name === 'string';
-  }, []);
 
   // Normalize category names
-  const normalizeCategory = useCallback((category) => {
-    if (!category) return 'Other';
-
-    const trimmed = category.trim();
-
-    // Check fix map (case-insensitive)
-    const fixedCategory = categoryFixMap[trimmed] ||
-      Object.entries(categoryFixMap).find(([key]) =>
-        key.toLowerCase() === trimmed.toLowerCase()
-      )?.[1];
-
-    if (fixedCategory) return fixedCategory;
-
-    // Check existing muscle groups with null safety
-    const matchedGroup = muscleGroups.find(g =>
-      isValidGroup(g) && g.name.toLowerCase() === trimmed.toLowerCase()
-    );
-
-    if (matchedGroup) return matchedGroup.name;
-
-    return trimmed;
-  }, [muscleGroups, isValidGroup]);
 
   // Clean exercise data
-  const cleanExerciseData = useCallback((exercise) => {
-    const cleaned = {
-      id: exercise.id || crypto.randomUUID(),
-      name: exercise.name?.trim() || 'Unnamed Exercise',
-      muscleGroup: normalizeCategory(exercise.muscleGroup || exercise.muscle_group),
-      imageUrl: exercise.imageUrl || '',
-      videoUrl: exercise?.videoUrl || '' // Add videoUrl preservation
-    };
-
-    return Object.fromEntries(
-      Object.entries(cleaned).filter(([_, value]) => value !== undefined)
-    );
-  }, [normalizeCategory]);
 
   // Update visibleGroups when muscleGroups changes
   useEffect(() => {
@@ -229,30 +169,10 @@ const GymPage = () => {
     loadData();
   }, []);
 
-  // Load Groups on Mount
-  useEffect(() => {
-    const fetchGroups = async () => {
-      const groups = await getGymGroups();
-      setGymGroups(groups);
-      // Select first group default if exists, or null
-      if (groups.length > 0) {
-        setSelectedGroupId(groups[0].id);
-      }
-    };
-    fetchGroups();
-  }, []);
-
   // Fetch plans when selectedGroupId changes
   useEffect(() => {
-    // If we have groups but no selection yet (initial load), wait.
-    // If no groups exist, selectedGroupId is null, we load "ungrouped" or all (depending on logic).
-    // Let's assume: if groups exist, we MUST select one to see plans.
-    // If no groups exist, we might see everything or prompt to create one.
-
-    // Better UX: Always load based on selection.
-
     setIsLoading(true);
-    loadPlansFromFirestore(selectedGroupId)
+    loadPlansFromFirestore(activeTeamId || null)
       .then(savedPlans => {
         const plansArray = Array.isArray(savedPlans) ? savedPlans : [];
         setPlans(plansArray);
@@ -265,7 +185,7 @@ const GymPage = () => {
         setPlans([]);
         setIsLoading(false);
       });
-  }, [selectedGroupId]);
+  }, [activeTeamId]);
 
   // Handle URL Deep Linking
   useEffect(() => {
@@ -392,7 +312,7 @@ const GymPage = () => {
       exercises: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      groupId: selectedGroupId || null // Assign to current group
+      groupId: activeTeamId || null // Assign to current group
     };
 
     const initialPosition = {
@@ -432,7 +352,7 @@ const GymPage = () => {
       players: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      groupId: selectedGroupId || null
+      groupId: activeTeamId || null
     };
 
     const initialPosition = {
@@ -476,19 +396,8 @@ const GymPage = () => {
     setOpenPlanIds([...openPlanIds, duplicatedPlan.id]);
   };
 
-  const openPlan = (planId) => {
-    setOpenPlanIds(prev => [...prev, planId]);
-    setCurrentPlanId(planId);
-  };
 
   // Update closePlan to add back to minimizedPlans
-  const closePlan = (planId) => {
-    setOpenPlanIds(prev => prev.filter(id => id !== planId));
-    setMinimizedPlans(prev => [...prev, planId]);
-    if (currentPlanId === planId) {
-      setCurrentPlanId(null);
-    }
-  };
 
   // Update minimizePlan to do nothing (since plans are minimized by default)
   const minimizePlan = (planId) => {
@@ -509,13 +418,6 @@ const GymPage = () => {
   };
 
   // Update deletePlan to clean up both states
-  const deletePlan = (planId) => {
-    if (window.confirm('Are you sure you want to delete this plan?')) {
-      setPlans(plans.filter(p => p.id !== planId));
-      setMinimizedPlans(prev => prev.filter(id => id !== planId));
-      closePlan(planId);
-    }
-  };
 
   const setActiveWorkoutPlan = (planId) => {
     setActivePlanId(planId);
@@ -583,23 +485,6 @@ const GymPage = () => {
     });
   };
 
-  const organizedExercises = useMemo(() => {
-    const groupedExercises = (Array.isArray(customExercises) ? customExercises : [])
-      .reduce((acc, exercise) => {
-        const group = exercise?.muscleGroup || 'Other';
-        if (!acc[group]) {
-          acc[group] = [];
-        }
-        acc[group].push(exercise);
-        return acc;
-      }, {});
-
-    return Object.entries(groupedExercises).map(([groupName, exercises]) => ({
-      id: groupName.toLowerCase().replace(/\s+/g, '-'),
-      name: groupName,
-      exercises: exercises
-    }));
-  }, [customExercises]);
 
   const handleDeleteExercise = (exerciseId) => {
     if (window.confirm('Are you sure you want to delete this exercise?')) {
@@ -642,34 +527,6 @@ const GymPage = () => {
     }
   };
 
-  const handleAddExercise = async (muscleGroup) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*';
-
-    input.onchange = async (e) => {
-      const files = Array.from(e.target.files);
-      try {
-        const newExercises = await Promise.all(files.map(async (file) => {
-          const imageUrl = await uploadExerciseImage(file);
-          return {
-            id: crypto.randomUUID(),
-            name: file.name.replace(/\.[^/.]+$/, '').replace(/-|_/g, ' '),
-            muscleGroup: muscleGroup,
-            imageUrl: imageUrl
-          };
-        }));
-
-        setCustomExercises(prev => [...prev, ...newExercises]);
-      } catch (error) {
-        console.error('Failed to add exercises:', error);
-        alert('Failed to upload images. Please try again.');
-      }
-    };
-
-    input.click();
-  };
 
   const handleDragStart = (e, exercise, index) => {
     setDraggedExercise({ ...exercise, originalIndex: index });
@@ -686,7 +543,7 @@ const GymPage = () => {
     setDragTargetIndex(index);
   };
 
-  const handleDrop = (e, muscleGroup) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     if (!draggedExercise || dragTargetIndex === null) return;
 
@@ -772,10 +629,6 @@ const GymPage = () => {
     setEditingExercise(null);
   };
 
-  const filteredGroups = useMemo(() => {
-    return (Array.isArray(muscleGroups) ? muscleGroups : [])
-      .filter(isValidGroup);
-  }, [muscleGroups, isValidGroup]);
 
   const handleDeletePlan = (planId) => {
     if (window.confirm('Delete this plan? This action cannot be undone.')) {
@@ -791,32 +644,6 @@ const GymPage = () => {
       // But adhering to original style for now unless specifically asked to fix bugs.
       // Actually, let's call the service
       import('../services/planService').then(mod => mod.deletePlanFromFirestore(planId));
-    }
-  };
-
-  const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) return;
-    try {
-      const newGroup = await createGymGroup(newGroupName.trim());
-      setGymGroups(prev => [...prev, newGroup]);
-      setSelectedGroupId(newGroup.id);
-      setNewGroupName('');
-      setShowNewGroupInput(false);
-    } catch (err) {
-      alert('Failed to create group');
-    }
-  };
-
-  const handleDeleteGroup = async () => {
-    if (!selectedGroupId) return;
-    if (!window.confirm("Delete this group? Plans within it will be hidden (or you need to delete them manually).")) return;
-    try {
-      await deleteGymGroup(selectedGroupId);
-      const remaining = gymGroups.filter(g => g.id !== selectedGroupId);
-      setGymGroups(remaining);
-      setSelectedGroupId(remaining.length > 0 ? remaining[0].id : null);
-    } catch (err) {
-      alert('Failed to delete group');
     }
   };
 
@@ -875,356 +702,296 @@ const GymPage = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div
-        className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-8 text-center"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleImageDrop}
-      >
-        <p className="text-gray-500">
-          Drag and drop images here to create new exercises
-        </p>
-      </div>
+    <div className="min-h-screen w-full bg-slate-50 pt-4 pb-12">
+      <div className="container mx-auto px-4 py-4">
+        <div
+          className="border-2 border-dashed border-slate-300 bg-white shadow-sm rounded-xl p-8 mb-8 text-center transition-colors hover:border-slate-400"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleImageDrop}
+        >
+          <p className="text-gray-500">
+            Drag and drop images here to create new exercises
+          </p>
+        </div>
 
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex-1 max-w-xl">
-          <input
-            type="text"
-            placeholder="Search exercises..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2"
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex-1 max-w-xl">
+            <input
+              type="text"
+              placeholder="Search exercises..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+            />
+          </div>
+
+          <div className="flex items-center gap-4 ml-4">
+            <button
+              onClick={() => setShowSavedPlansPanel(true)}
+              className="px-4 py-2 rounded-xl bg-white border border-slate-300 shadow-sm hover:shadow-md hover:bg-slate-50 text-slate-700 text-sm font-medium transition-all"
+            >
+              📋 Saved Plans
+            </button>
+            <button
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium shadow-sm transition-all border ${isEditMode
+                ? 'bg-green-500 hover:bg-green-600 text-white border-transparent'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 hover:shadow-md'
+                }`}
+            >
+              {isEditMode ? 'Done' : 'Edit'}
+            </button>
+            <button
+              onClick={createNewPlan}
+              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-xl shadow-sm hover:shadow-md hover:bg-blue-700 border border-transparent transition-all text-sm"
+            >
+              + New Plan
+            </button>
+            <button
+              onClick={createNewIndividualPlan}
+              className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-xl shadow-sm hover:shadow-md hover:bg-indigo-700 border border-transparent transition-all text-sm"
+            >
+              + Individual
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-10 h-10 flex items-center justify-center bg-white border border-slate-300 shadow-sm hover:shadow-md hover:bg-slate-50 text-slate-700 rounded-xl transition-all"
+            >
+              ⚙️
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-8 bg-slate-800 p-6 md:p-8 rounded-3xl shadow-inner border border-slate-700">
+          {Array.isArray(muscleGroups) && muscleGroups
+            .filter(validateMuscleGroup)
+            .map((group) => {
+              // Check if group is visible
+              if (!visibleGroups.includes(group.name)) return null;
+
+              const groupExercises = customExercises.filter(ex =>
+                ex?.muscleGroup === group.name
+              );
+
+              if (!groupExercises.length) return null;
+
+              return (
+                <div key={group.name} className="relative z-10">
+                  <h3 className="text-xl font-bold mb-4 text-white tracking-wide">
+                    {group.name}
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {groupExercises.map((exercise, index) => (
+                      <div
+                        key={exercise.id}
+                        className={`relative cursor-pointer transition-all duration-200 bg-slate-800 rounded-xl overflow-hidden border border-slate-700 shadow-md hover:shadow-xl flex flex-col p-3 w-full ${isEditMode && dragTargetIndex === index ? 'border-2 border-blue-500' : ''
+                          }`}
+                        onClick={() => !isEditMode && handleExerciseClick(exercise)}
+                        draggable={isEditMode}
+                        onDragStart={(e) => handleDragStart(e, exercise, index)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={(e) => isEditMode && handleDragOver(e, index)}
+                        onDrop={(e) => isEditMode && handleDrop(e, group.name)}
+                      >
+                        {/* Edit / Delete overlay buttons */}
+                        {isEditMode && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteExercise(exercise.id);
+                              }}
+                              className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-20 shadow-md"
+                            >
+                              ×
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingExercise(exercise);
+                              }}
+                              className="absolute top-2 left-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 z-20 shadow-md"
+                            >
+                              ✎
+                            </button>
+                          </>
+                        )}
+
+                        {/* Square Image Container - Maximizes space and keeps aspect ratio 1:1 */}
+                        <div className="w-full aspect-square bg-white rounded-lg overflow-hidden flex items-center justify-center p-2">
+                          <img
+                            src={exercise.imageUrl}
+                            alt={exercise.name}
+                            className="w-full h-full object-contain max-w-full max-h-full"
+                          />
+                        </div>
+
+                        {/* Title */}
+                        <div className="pt-3 pb-1 px-1 text-center font-bold text-white text-base truncate">
+                          {exercise.name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+
+        {showUploadModal && (
+          <ImageUploadModal
+            isOpen={showUploadModal}
+            onClose={() => {
+              setShowUploadModal(false);
+              setUploadedImages([]);
+              setCurrentImageIndex(0);
+            }}
+            images={uploadedImages}
+            muscleGroups={muscleGroups.map(g => g.name)}  // Pass only names array
+            onSaveExercise={handleSaveExercise}
+            currentIndex={currentImageIndex}
           />
-        </div>
+        )}
 
-        {/* GROUP SELECTOR */}
-        <div className="flex items-center gap-2 ml-4 bg-gray-50 p-2 rounded-lg border">
-          <span className="text-sm font-semibold text-gray-600">Team:</span>
+        {showSettings && (
+          <ExerciseLibrarySettings
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            muscleGroups={muscleGroups}
+            visibleGroups={visibleGroups}
+            onToggleVisibility={(groupName) => {
+              setVisibleGroups(prev =>
+                prev.includes(groupName)
+                  ? prev.filter(g => g !== groupName)
+                  : [...prev, groupName]
+              );
+            }}
+            onMoveGroup={(index, direction) => {
+              const newGroups = [...muscleGroups];
+              const newIndex = direction === 'up' ? index - 1 : index + 1;
+              if (newIndex >= 0 && newIndex < newGroups.length) {
+                [newGroups[index], newGroups[newIndex]] = [newGroups[newIndex], newGroups[index]];
+                setMuscleGroups(newGroups);
+              }
+            }}
+            onAddMuscleGroup={handleAddMuscleGroup}
+            onDeleteGroup={handleDeleteMuscleGroup}
+            onUpdateGroupRows={handleUpdateGroupRows}
+          />
+        )}
 
-          {!showNewGroupInput ? (
-            <>
-              <select
-                value={selectedGroupId || ''}
-                onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="px-2 py-1 border rounded text-sm min-w-[120px]"
-              >
-                <option value="" disabled={gymGroups.length > 0}>
-                  {gymGroups.length === 0 ? "No Groups" : "Select Group"}
-                </option>
-                {gymGroups.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => setShowNewGroupInput(true)}
-                className="px-2 py-1 bg-blue-100 text-blue-600 rounded text-xs hover:bg-blue-200"
-              >
-                + New
-              </button>
-              {selectedGroupId && (
+        {showMessage && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl">
+              <h3 className="text-lg font-semibold mb-4">No Active Plan</h3>
+              <p className="mb-4">Please select or create a workout plan first.</p>
+              <div className="flex justify-end gap-4">
                 <button
-                  onClick={handleDeleteGroup}
-                  className="px-2 py-1 text-red-400 hover:text-red-600 text-xs"
-                  title="Delete Group"
+                  onClick={createNewPlan}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
-                  ✕
+                  Create New Plan
                 </button>
-              )}
-            </>
-          ) : (
-            <div className="flex items-center gap-1">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Group Name"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                className="px-2 py-1 border rounded text-sm w-32"
-              />
-              <button onClick={handleCreateGroup} className="text-green-600 font-bold">✓</button>
-              <button onClick={() => setShowNewGroupInput(false)} className="text-red-500 font-bold">✕</button>
+                <button
+                  onClick={() => setShowMessage(false)}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="flex items-center gap-4 ml-4">
-          <button
-            onClick={() => setShowSavedPlansPanel(true)}
-            className="px-4 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium"
-          >
-            📋 Saved Plans
-          </button>
-          <button
-            onClick={() => setShowMergeModal(true)}
-            className="px-4 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-sm"
-          >
-            Open Merge Image
-          </button>
-          <button
-            onClick={() => setIsEditMode(!isEditMode)}
-            className={`px-4 py-2 rounded-lg ${isEditMode
-              ? 'bg-green-500 hover:bg-green-600 text-white'
-              : 'bg-gray-100 hover:bg-gray-200'
-              } text-sm`}
-          >
-            {isEditMode ? 'Done' : 'Edit'}
-          </button>
-          <button
-            onClick={createNewPlan}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-          >
-            + New Plan
-          </button>
-          <button
-            onClick={createNewIndividualPlan}
-            className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600"
-          >
-            + Individual
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-gray-100 rounded-full"
-          >
-            ⚙️
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-8">
-        {Array.isArray(muscleGroups) && muscleGroups
-          .filter(validateMuscleGroup)
-          .map((group) => {
-            // Check if group is visible
-            if (!visibleGroups.includes(group.name)) return null;
-
-            const groupExercises = customExercises.filter(ex =>
-              ex?.muscleGroup === group.name
-            );
-
-            if (!groupExercises.length) return null;
+        <div className="fixed bottom-0 left-0 right=0 bg-gray-100 border-t flex items-center p-2 gap-2">
+          {minimizedPlans.map(planId => {
+            const plan = plans.find(p => p.id === planId);
+            if (!plan) return null;
 
             return (
-              <div key={group.name}>
-                <h3 className="text-xl font-bold mb-4 text-gray-800">
-                  {group.name}
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {groupExercises.map((exercise, index) => (
-                    <div
-                      key={exercise.id}
-                      className={`relative cursor-pointer hover:opacity-80 transition bg-white rounded-lg shadow-sm p-2
-                        ${isEditMode && dragTargetIndex === index ? 'border-2 border-blue-500' : ''}`}
-                      onClick={() => !isEditMode && handleExerciseClick(exercise)}
-                      draggable={isEditMode}
-                      onDragStart={(e) => handleDragStart(e, exercise, index)}
-                      onDragEnd={handleDragEnd}
-                      onDragOver={(e) => isEditMode && handleDragOver(e, index)}
-                      onDrop={(e) => isEditMode && handleDrop(e, group.name)}
-                    >
-                      {isEditMode && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteExercise(exercise.id);
-                            }}
-                            className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-10"
-                          >
-                            ×
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingExercise(exercise);
-                            }}
-                            className="absolute top-2 left-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 z-10"
-                          >
-                            ✎
-                          </button>
-                        </>
-                      )}
-                      <img
-                        src={exercise.imageUrl}
-                        alt={exercise.name}
-                        className="w-full h-40 object-cover rounded-lg mb-2"
-                      />
-                      <p className="text-sm text-center truncate">{exercise.name}</p>
-                    </div>
-                  ))}
-                </div>
+              <div
+                key={planId}
+                className={`flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-sm cursor-pointer hover:bg-gray-50
+                ${activePlanId === planId ? 'border-2 border-blue-500' : 'border border-gray-200'}`}
+                onClick={() => {
+                  restorePlan(planId);
+                  setActiveWorkoutPlan(planId);
+                }}
+              >
+                <span className="text-sm font-medium truncate max-w-[150px]">
+                  {plan.name}
+                </span>
               </div>
             );
           })}
-      </div>
-
-      {showUploadModal && (
-        <ImageUploadModal
-          isOpen={showUploadModal}
-          onClose={() => {
-            setShowUploadModal(false);
-            setUploadedImages([]);
-            setCurrentImageIndex(0);
-          }}
-          images={uploadedImages}
-          muscleGroups={muscleGroups.map(g => g.name)}  // Pass only names array
-          onSaveExercise={handleSaveExercise}
-          currentIndex={currentImageIndex}
-        />
-      )}
-
-      {showSettings && (
-        <ExerciseLibrarySettings
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          muscleGroups={muscleGroups}
-          visibleGroups={visibleGroups}
-          onToggleVisibility={(groupName) => {
-            setVisibleGroups(prev =>
-              prev.includes(groupName)
-                ? prev.filter(g => g !== groupName)
-                : [...prev, groupName]
-            );
-          }}
-          onMoveGroup={(index, direction) => {
-            const newGroups = [...muscleGroups];
-            const newIndex = direction === 'up' ? index - 1 : index + 1;
-            if (newIndex >= 0 && newIndex < newGroups.length) {
-              [newGroups[index], newGroups[newIndex]] = [newGroups[newIndex], newGroups[index]];
-              setMuscleGroups(newGroups);
-            }
-          }}
-          onAddMuscleGroup={handleAddMuscleGroup}
-          onDeleteGroup={handleDeleteMuscleGroup}
-          onUpdateGroupRows={handleUpdateGroupRows}
-        />
-      )}
-
-      {showMessage && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl">
-            <h3 className="text-lg font-semibold mb-4">No Active Plan</h3>
-            <p className="mb-4">Please select or create a workout plan first.</p>
-            <div className="flex justify-end gap-4">
-              <button
-                onClick={createNewPlan}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Create New Plan
-              </button>
-              <button
-                onClick={() => setShowMessage(false)}
-                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Close
-              </button>
-            </div>
-          </div>
         </div>
-      )}
 
-      <div className="fixed bottom-0 left-0 right=0 bg-gray-100 border-t flex items-center p-2 gap-2">
-        {minimizedPlans.map(planId => {
+        {openPlanIds.map((planId) => {
           const plan = plans.find(p => p.id === planId);
           if (!plan) return null;
 
-          return (
-            <div
-              key={planId}
-              className={`flex items-center gap-2 px-3 py-2 bg-white rounded-lg shadow-sm cursor-pointer hover:bg-gray-50
-                ${activePlanId === planId ? 'border-2 border-blue-500' : 'border border-gray-200'}`}
-              onClick={() => {
-                restorePlan(planId);
-                setActiveWorkoutPlan(planId);
-              }}
-            >
-              <span className="text-sm font-medium truncate max-w-[150px]">
-                {plan.name}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+          if (plan.type === 'individual') {
+            return (
+              <IndividualPlanBuilderModal
+                key={planId}
+                isOpen={true}
+                onClose={() => handleDeletePlan(planId)}
+                plan={plan}
+                onUpdatePlan={(updated) => updateFullPlan(planId, updated)}
+                onMinimize={() => minimizePlan(planId)}
+                onSave={() => savePlan(planId)}
+                isActive={activePlanId === planId}
+                onActivate={() => setActiveWorkoutPlan(planId)}
+                planName={plan.name}
+                onRenamePlan={(newName) => renamePlan(planId, newName)}
+                draggedExercise={draggedExercise} // Pass dragged exercise for dropping
+                exercises={customExercises}
+                defaultTVMode={urlTvMode && plan.id === urlPlanId}
+              />
+            );
+          }
 
-      {openPlanIds.map((planId) => {
-        const plan = plans.find(p => p.id === planId);
-        if (!plan) return null;
-
-        if (plan.type === 'individual') {
           return (
-            <IndividualPlanBuilderModal
+            <PlanBuilderModal
               key={planId}
               isOpen={true}
-              onClose={() => handleDeletePlan(planId)}
-              plan={plan}
-              onUpdatePlan={(updated) => updateFullPlan(planId, updated)}
+              onClose={() => handleDeletePlan(planId)}  // Changed from onDelete to onClose
               onMinimize={() => minimizePlan(planId)}
+              plan={plan.exercises || []}
+              onUpdatePlan={(exercises) => updatePlan(planId, exercises)}
+              isEditMode={editModes[planId] || false}
+              onToggleEditMode={(value) => toggleEditMode(planId, value)}
+              exercises={customExercises}
+              initialPosition={planPositions[planId] || { x: window.innerWidth - 520, y: 20 }}
+              planName={plan.name}
+              onDuplicate={() => duplicatePlan(planId)}
               onSave={() => savePlan(planId)}
               isActive={activePlanId === planId}
               onActivate={() => setActiveWorkoutPlan(planId)}
-              planName={plan.name}
               onRenamePlan={(newName) => renamePlan(planId, newName)}
-              draggedExercise={draggedExercise} // Pass dragged exercise for dropping
-              exercises={customExercises}
               defaultTVMode={urlTvMode && plan.id === urlPlanId}
+              planId={planId}
+              firebaseId={plan.firebaseId}
             />
           );
-        }
+        })}
 
-        return (
-          <PlanBuilderModal
-            key={planId}
-            isOpen={true}
-            onClose={() => handleDeletePlan(planId)}  // Changed from onDelete to onClose
-            onMinimize={() => minimizePlan(planId)}
-            plan={plan.exercises || []}
-            onUpdatePlan={(exercises) => updatePlan(planId, exercises)}
-            isEditMode={editModes[planId] || false}
-            onToggleEditMode={(value) => toggleEditMode(planId, value)}
-            exercises={customExercises}
-            initialPosition={planPositions[planId] || { x: window.innerWidth - 520, y: 20 }}
-            planName={plan.name}
-            onDuplicate={() => duplicatePlan(planId)}
-            onSave={() => savePlan(planId)}
-            isActive={activePlanId === planId}
-            onActivate={() => setActiveWorkoutPlan(planId)}
-            onRenamePlan={(newName) => renamePlan(planId, newName)}
-            defaultTVMode={urlTvMode && plan.id === urlPlanId}
-            planId={planId}
-            firebaseId={plan.firebaseId}
+        {editingExercise && (
+          <ExerciseEditModal
+            exercise={editingExercise}
+            muscleGroups={muscleGroups}
+            onSave={handleExerciseUpdate}
+            onClose={() => setEditingExercise(null)}
           />
-        );
-      })}
+        )}
 
-      {editingExercise && (
-        <ExerciseEditModal
-          exercise={editingExercise}
-          muscleGroups={muscleGroups}
-          onSave={handleExerciseUpdate}
-          onClose={() => setEditingExercise(null)}
+        <SidePanelPlans
+          isOpen={showSavedPlansPanel}
+          onClose={() => setShowSavedPlansPanel(false)}
+          onOpenPlan={handleOpenPlanFromSidebar}
+          activePlanId={activePlanId}
         />
-      )}
-
-      {showMergeModal && (
-        <MergeImageModal
-          onClose={() => setShowMergeModal(false)}
-          onSave={(data) => {
-            console.log("Exercise saved:", data);
-            setCustomExercises(prev => [...prev, {
-              ...data,
-              id: crypto.randomUUID(),
-            }]);
-            setShowMergeModal(false);
-          }}
-          muscleGroups={muscleGroups.map(g => g.name)}
-        />
-      )}
-
-      <SidePanelPlans
-        isOpen={showSavedPlansPanel}
-        onClose={() => setShowSavedPlansPanel(false)}
-        onOpenPlan={handleOpenPlanFromSidebar}
-        activePlanId={activePlanId}
-      />
+      </div>
     </div>
   );
 };

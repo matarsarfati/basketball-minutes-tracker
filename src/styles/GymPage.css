@@ -1,14 +1,15 @@
 .exercise-card.dragging {
   opacity: 0.5;
-  border: 2px dashed #4a90e2;
+  border: 2px dashed #3b82f6 !important;
+  box-shadow: none !important;
 }
 
 .exercise-card {
-  transition: transform 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .exercise-card:hover {
-  transform: translateY(-2px);
+  border-color: #3b82f6;
 }
 
 .exercise-selector {

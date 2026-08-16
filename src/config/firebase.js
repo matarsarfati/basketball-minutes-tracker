@@ -1,3 +1,7 @@
+/* eslint-disable no-unused-vars */
+/* eslint-disable jsx-a11y/img-redundant-alt */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-undef */
 import { initializeApp } from 'firebase/app';
 import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';

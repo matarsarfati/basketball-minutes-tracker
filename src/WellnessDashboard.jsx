@@ -33,17 +33,17 @@ const WellnessEmoji = ({ type, score }) => {
     fatigue: ["😌", "🙂", "😐", "😕", "😟", "😓", "😰", "😫", "😵", "💀"],
     soreness: ["💪", "😊", "🙂", "😐", "😕", "😣", "😖", "😩", "😫", "🤕"]
   };
-  
+
   return <span>{emojis[type][score - 1] || '❓'}</span>;
 };
 
 const formatTime = (timestamp) => {
   if (!timestamp) return '';
   const date = timestamp.toDate();
-  return date.toLocaleTimeString('en-US', { 
+  return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true 
+    hour12: true
   });
 };
 
@@ -51,7 +51,6 @@ export default function WellnessDashboard() {
   const navigate = useNavigate();
   const [players, setPlayers] = useState([]);
   const [wellnessData, setWellnessData] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -96,7 +95,7 @@ export default function WellnessDashboard() {
 
       <h1 className="text-2xl font-bold mb-2">💪 Daily Wellness Dashboard</h1>
       <p className="text-lg text-gray-600 mb-6">
-        {new Date().toLocaleDateString('en-US', { 
+        {new Date().toLocaleDateString('en-US', {
           weekday: 'long',
           year: 'numeric',
           month: 'long',

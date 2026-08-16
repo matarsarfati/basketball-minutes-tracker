@@ -1,112 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import "./SurveyForm.css";
 import { practiceDataService } from './services/practiceDataService';
 import { rosterService } from './services/rosterService';
+import {
+  getTranslation,
+  getRpeText,
+  SUCCESS_MESSAGES
+} from './constants/translations';
+import "./SurveyForm.css";
 
 const SURVEY_STORE_KEY = "practiceSurveysV1";
-
-const SUCCESS_MESSAGES = [
-  "Now it's time for rest, you earned it.",
-  "The basket already misses you.",
-  "Great work today, champion.",
-  "Recovery is part of the process.",
-  "See you at the next practice!",
-  "Another brick in the wall of success.",
-  "Rest up, tomorrow we go again."
-];
-
-const GYM_RPE_SHORT = {
-  1: "Very light",
-  2: "Light",
-  3: "Moderate",
-  4: "Somewhat hard",
-  5: "Hard",
-  6: "Harder",
-  7: "Very hard",
-  8: "Extremely hard",
-  9: "Near maximal",
-  10: "Maximal effort",
-};
-
-// Helper functions
-function rpeShort(value) {
-  return GYM_RPE_SHORT[value] || `${value}`;
-}
-
-function rpeEmoji(value) {
-  const EMOJI = ["😴", "🙂", "😊", "😌", "😰", "😕", "😣", "😫", "😬", "😱"];
-  return EMOJI[value - 1] || "🙂";
-}
-
-const styles = {
-  section: {
-    marginBottom: "1.5rem",
-  },
-  bar: {
-    position: "relative",
-    height: "8px",
-    background: "linear-gradient(to right, #22c55e, #f59e0b, #ef4444)",
-    borderRadius: "999px",
-    marginBottom: "1rem",
-  },
-  track: {
-    position: "relative",
-    width: "100%",
-    height: "100%",
-  },
-  thumb: {
-    position: "absolute",
-    top: "50%",
-    width: "20px",
-    height: "20px",
-    backgroundColor: "#fff",
-    borderRadius: "50%",
-    transform: "translate(-50%, -50%)",
-    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
-    border: "2px solid currentColor",
-    transition: "left 0.1s ease-out",
-  },
-  tokenGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
-    gap: "0.5rem",
-    marginTop: "1rem",
-  },
-  token: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    padding: "0.5rem",
-    background: "#F3F4F6",
-    borderRadius: "0.5rem",
-    cursor: "pointer",
-    transition: "all 0.2s",
-  },
-  tokenActive: {
-    background: "#4B5563",
-    color: "white",
-  },
-  emoji: {
-    fontSize: "1.25rem",
-    marginBottom: "0.25rem",
-  },
-  number: {
-    fontSize: "0.875rem",
-    fontWeight: "500",
-  }
-};
-
-const QUESTION_LABELS = {
-  rpe: "Session Intensity (RPE) — 1 to 10"
-};
 
 export default function GymSurvey() {
   const { sessionId } = useParams();
   const [players, setPlayers] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
+  const [lang, setLang] = useState('he'); // Default to Hebrew
+
   const [rpe, setRpe] = useState(null);
   const [notes, setNotes] = useState('');
+
   const [submitted, setSubmitted] = useState({});
   const [showSuccess, setShowSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,13 +50,12 @@ export default function GymSurvey() {
             .map(p => ({
               id: p.id,
               name: p.name,
-              number: p.number
+              number: p.number,
+              preferredLanguage: p.preferredLanguage || 'he'
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
 
           setPlayers(present);
-          // Also update localStorage as backup for next reload (optional, but requested to remove dependency)
-          // localStorage.setItem(`gymSurveyPlayers_${sessionId}`, JSON.stringify(present));
         } else {
           setPlayers([]);
         }
@@ -178,85 +90,6 @@ export default function GymSurvey() {
     return () => unsubscribe();
   }, [sessionId]);
 
-  const renderControl = (type, currentValue, setter) => {
-    const emojiFor = rpeEmoji;  // Since we only have RPE
-    const shortFor = rpeShort;
-    const hasValue = typeof currentValue === "number" && currentValue >= 1 && currentValue <= 10;
-    const displayValue = hasValue ? currentValue : 5;
-
-    const applyValue = (newValue) => {
-      setter(newValue);
-      setShowSuccess(false);
-    };
-
-    const thumbStyle = {
-      ...styles.thumb,
-      left: `${((displayValue - 1) / 9) * 100}%`,
-      opacity: hasValue ? 1 : 0.4,
-    };
-
-    return (
-      <div style={styles.section}>
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>{QUESTION_LABELS[type]}</div>
-        <div className="scaleSection" style={{ marginTop: 4 }}>
-          <div className="sliderBar">
-            <div style={styles.bar}>
-              <div style={styles.track}>
-                <div style={thumbStyle} />
-                <input
-                  type="range"
-                  min={1}
-                  max={10}
-                  step={1}
-                  value={displayValue}
-                  onChange={(event) => applyValue(Number(event.target.value))}
-                  style={{
-                    position: "absolute",
-                    top: -12,
-                    left: 0,
-                    width: "100%",
-                    height: 32,
-                    opacity: 0,
-                    cursor: "pointer",
-                  }}
-                  aria-valuenow={displayValue}
-                  aria-valuemin={1}
-                  aria-valuemax={10}
-                  aria-label={QUESTION_LABELS[type]}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="scaleSelected">
-            <span className="tokenEmoji">{emojiFor(displayValue)}</span>
-            <span style={{ marginLeft: 6, fontSize: 12, color: hasValue ? "#374151" : "#94a3b8" }}>
-              {hasValue
-                ? `Selected: ${displayValue} — ${shortFor(displayValue)}`
-                : "Selected: none yet"}
-            </span>
-          </div>
-          <div className="scaleRow">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => {
-              const selected = hasValue && level === displayValue;
-              return (
-                <button
-                  key={`rpe-token-${level}`}
-                  type="button"
-                  onClick={() => applyValue(level)}
-                  className={`scaleToken${selected ? " active" : ""}`}
-                  aria-pressed={selected}
-                >
-                  <span className="tokenEmoji">{emojiFor(level)}</span>
-                  <span className="tokenNum">{level}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!selectedPlayer || rpe === null) return;
@@ -290,40 +123,113 @@ export default function GymSurvey() {
       setNotes('');
       setSelectedPlayer('');
 
-      const randomMsg = SUCCESS_MESSAGES[Math.floor(Math.random() * SUCCESS_MESSAGES.length)];
+      // Random success message based on language
+      const messages = SUCCESS_MESSAGES[lang] || SUCCESS_MESSAGES['en'];
+      const randomMsg = messages[Math.floor(Math.random() * messages.length)];
       setSuccessMessage(randomMsg);
+
       setShowSuccess(true);
 
       console.log('✅ Gym survey saved successfully for:', selectedPlayer);
     } catch (err) {
       console.error('❌ Failed to save gym survey:', err);
-      alert('Failed to save response. Please try again.');
+      alert(getTranslation(lang, 'error'));
     }
   };
 
   const pendingPlayers = players.filter(p => !submitted[p.name]);
 
+  // Reusable Slider Component (Mobile First Design)
+  const RenderSlider = ({ label, value, onChange }) => {
+    const hasValue = typeof value === "number";
+    const displayValue = hasValue ? value : 5;
+
+    // Dynamic Text Logic
+    const dynamicText = hasValue ? getRpeText(lang, value, 'gym') : "";
+
+    // Gradient Logic
+    const getGradient = () => "linear-gradient(90deg, #4ade80 0%, #facc15 50%, #ef4444 100%)";
+    const thumbPosition = ((displayValue - 1) / 9) * 100;
+
+    return (
+      <div className="mb-0 select-none touch-none" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+        <div className="flex justify-between items-end mb-4">
+          <label className="font-bold text-lg text-gray-800">{label}</label>
+          {hasValue && (
+            <span className="text-3xl font-black text-indigo-600 transition-all scale-110">
+              {value}
+            </span>
+          )}
+        </div>
+
+        {/* Slider Track Container */}
+        <div className="relative h-14 w-full flex items-center">
+          {/* Background Track with Gradient */}
+          <div
+            className="absolute w-full h-4 rounded-full shadow-inner opacity-90"
+            style={{ background: getGradient() }}
+          ></div>
+
+          {/* Invisible Range Input for Interaction */}
+          <input
+            type="range"
+            min="1" max="10" step="1"
+            value={displayValue}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+          />
+
+          {/* Custom Thumb */}
+          <div
+            className="absolute h-10 w-10 bg-white border-4 border-indigo-600 rounded-full shadow-lg z-10 pointer-events-none transition-all flex items-center justify-center"
+            style={{
+              left: `${thumbPosition}%`,
+              transform: `translateX(-50%) scale(${hasValue ? 1.1 : 1})`
+            }}
+          >
+            {/* Optional micro-dot inside thumb */}
+            <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>
+          </div>
+        </div>
+
+        {/* Dynamic Label Display Below Slider */}
+        <div className="mt-3 text-center h-8 mb-6">
+          {hasValue ? (
+            <span className="text-lg font-bold text-gray-700 animate-in fade-in slide-in-from-top-1 duration-200 block">
+              {dynamicText}
+            </span>
+          ) : (
+            <span className="text-sm text-gray-400 font-medium italic">
+              {lang === 'he' ? 'הזז את המחוון...' : 'Slide to select...'}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+
   if (showSuccess) {
     return (
-      <div className="survey-form">
-        <div className="survey-wrap">
-          <div className="survey-card success-wrap">
-            <div className="success-title">✅ Response Saved!</div>
-            <p className="mb-4 text-center text-gray-600">{successMessage}</p>
-            <button
-              type="button"
-              onClick={() => {
-                setShowSuccess(false);
-                setSelectedPlayer('');
-                setRpe(null);
-                setNotes('');
-              }}
-              className="survey-primary w-full"
-              style={{ backgroundColor: '#8b5cf6' }}
-            >
-              Next Player →
-            </button>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl animate-bounce">
+            ✓
           </div>
+          <div className="text-2xl font-bold mb-4">{getTranslation(lang, 'successTitle')}</div>
+          <p className="mb-6 text-center text-gray-600">{successMessage}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setShowSuccess(false);
+              setSelectedPlayer('');
+              setRpe(null);
+              setNotes('');
+            }}
+            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+          >
+            {getTranslation(lang, 'nextPlayer')}
+          </button>
         </div>
       </div>
     );
@@ -331,45 +237,43 @@ export default function GymSurvey() {
 
   if (dataError) {
     return (
-      <div className="survey-form">
-        <div className="survey-wrap">
-          <div className="survey-card text-center">
-            <div className="text-4xl mb-4">⚠️</div>
-            <h3>Unable to load survey</h3>
-            <p className="text-red-500">{dataError}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
-            >
-              Retry
-            </button>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-red-100">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Unable to load survey</h3>
+          <p className="text-red-500">{dataError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+          >
+            {getTranslation(lang, 'retry')}
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="survey-form">
-      <div className="survey-wrap">
-        <div className="survey-card">
-          <Link to={`/practice/${sessionId}`} className="back-link">
-            ← Back to Practice
+    <div className="min-h-screen bg-gray-50 pb-20" dir={lang === 'he' ? 'rtl' : 'ltr'}>
+      <div className="max-w-4xl mx-auto p-4 space-y-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative">
+          <Link to={`/practice/${sessionId}`} className={`absolute top-6 text-gray-400 hover:text-gray-600 ${lang === 'he' ? 'left-6' : 'right-6'}`}>
+            <span className="text-xl">{lang === 'he' ? '→' : '←'}</span> {getTranslation(lang, 'backToPractice')}
           </Link>
 
-          <h1 className="survey-title">Gym Session Feedback</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mt-8 mb-6 text-center">{getTranslation(lang, 'gymSurveyTitle')}</h1>
 
           {/* Conditional Status Section */}
           {!isLoading && (
-            <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <div className="status-header">
-                <span className="text-2xl font-bold text-purple-600">
-                  {Object.keys(submitted).length} of {players.length} players completed
+            <div className="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-lg font-bold text-purple-600">
+                  {Object.keys(submitted).length} / {players.length} {getTranslation(lang, 'completedCount')}
                 </span>
               </div>
               {pendingPlayers.length > 0 ? (
-                <div className="status-body">
-                  <div className="status-label">Still waiting for:</div>
+                <div>
+                  <div className="text-xs text-purple-800 uppercase font-bold mb-2 tracking-wider">{getTranslation(lang, 'waitingFor')}</div>
                   <div className="flex flex-wrap gap-2">
                     {pendingPlayers.map(player => (
                       <span
@@ -383,21 +287,25 @@ export default function GymSurvey() {
                 </div>
               ) : (
                 <div className="mt-2 text-green-600 font-medium text-center">
-                  ✅ All present players have completed the survey!
+                  ✅ {getTranslation(lang, 'allComplete')}
                 </div>
               )}
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Player</label>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide">{getTranslation(lang, 'selectPlayer')}</label>
               <div className="relative">
                 <select
                   value={selectedPlayer}
                   onChange={e => {
-                    setSelectedPlayer(e.target.value);
-                    const existing = submitted[e.target.value];
+                    const val = e.target.value;
+                    setSelectedPlayer(val);
+                    const player = players.find(p => p.name === val);
+                    if (player) setLang(player.preferredLanguage);
+
+                    const existing = submitted[val];
                     if (existing) {
                       setRpe(existing.rpe);
                       setNotes(existing.notes || '');
@@ -406,11 +314,11 @@ export default function GymSurvey() {
                       setNotes('');
                     }
                   }}
-                  className="player-select"
+                  className="w-full text-lg p-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all bg-gray-50"
                   required
                   disabled={isLoading}
                 >
-                  <option value="">{isLoading ? "Loading players..." : "Choose player..."}</option>
+                  <option value="">{isLoading ? getTranslation(lang, 'loading') : getTranslation(lang, 'chooseName')}</option>
                   {!isLoading && players.map(p => (
                     <option key={p.name} value={p.name}>
                       {p.name} {submitted[p.name] ? '✓' : ''}
@@ -418,36 +326,44 @@ export default function GymSurvey() {
                   ))}
                 </select>
                 {isLoading && (
-                  <div className="absolute right-3 top-3">
-                    <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className={`absolute top-1/2 -translate-y-1/2 ${lang === 'he' ? 'left-3' : 'right-3'}`}>
+                    <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="form-group">
-              <label>{QUESTION_LABELS.rpe}</label>
-              {renderControl("rpe", rpe, setRpe)}
+            <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+              <RenderSlider label={getTranslation(lang, 'gymIntensity')} value={rpe} onChange={setRpe} />
+              <div className="p-4 bg-blue-100/50 rounded-xl">
+                <p className="text-sm text-blue-800 leading-relaxed">
+                  {getTranslation(lang, 'gymTip')}
+                </p>
+              </div>
             </div>
 
-            <div className="form-group">
-              <label>Notes (Optional)</label>
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-gray-700">{getTranslation(lang, 'notesLabel')}</label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                className="notes-input"
-                rows={3}
-                placeholder="Any additional comments..."
+                className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all resize-none h-32"
+                placeholder={getTranslation(lang, 'notesPlaceholder')}
               />
             </div>
 
             <button
               type="submit"
-              className="survey-primary"
-              style={{ backgroundColor: '#8b5cf6' }}
+              className={`
+                    w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:-translate-y-1 active:scale-95
+                    ${(!selectedPlayer || rpe === null)
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-500/30'
+                }
+                `}
               disabled={!selectedPlayer || rpe === null}
             >
-              Save Response
+              {getTranslation(lang, 'saveResponse')}
             </button>
           </form>
         </div>

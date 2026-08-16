@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { rosterService } from './services/rosterService';
 import { wellnessService } from './services/wellnessService';
 import './SurveyForm.css';
@@ -23,16 +22,15 @@ const QUESTIONS = {
 };
 
 export default function WellnessForm() {
-  const navigate = useNavigate();
   const [players, setPlayers] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState("");
   const [responses, setResponses] = useState({});
   const [completed, setCompleted] = useState({});
-  const [values, setValues] = useState({ 
-    sleep: null, 
-    fatigue: null, 
+  const [values, setValues] = useState({
+    sleep: null,
+    fatigue: null,
     soreness: null,
-    physioNotes: "" 
+    physioNotes: ""
   });
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -44,9 +42,9 @@ export default function WellnessForm() {
         rosterService.getPlayers(),
         wellnessService.getTodayWellness()
       ]);
-      
+
       setPlayers(playersList || []);
-      
+
       if (wellnessData?.responses) {
         setCompleted(wellnessData.responses);
         setResponses(wellnessData.responses);
@@ -72,12 +70,12 @@ export default function WellnessForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!selectedPlayer) {
       setError("Please select a player");
       return;
     }
-    
+
     if (values.sleep === null || values.fatigue === null || values.soreness === null) {
       setError("Please answer all 3 questions");
       return;
@@ -122,7 +120,7 @@ export default function WellnessForm() {
     const question = QUESTIONS[type];
     const hasValue = currentValue !== null;
     const displayValue = hasValue ? currentValue : 5;
-    
+
     const applyValue = (newValue) => {
       setter(type, newValue);
       setShowSuccess(false);
@@ -163,7 +161,7 @@ export default function WellnessForm() {
     return (
       <div className="survey-control">
         <label className="control-label">{question.title}</label>
-        
+
         <div className="scaleSection">
           <div className="sliderBar" style={styles.bar}>
             <input
@@ -175,7 +173,7 @@ export default function WellnessForm() {
               style={{ ...styles.track, ...styles.thumb, opacity: hasValue ? 1 : 0.4 }}
             />
           </div>
-          
+
           <div className="scaleSelected">
             {hasValue ? (
               <>
@@ -255,11 +253,11 @@ export default function WellnessForm() {
               </select>
             </div>
 
-            {renderControl("sleep", values.sleep, (name, value) => 
+            {renderControl("sleep", values.sleep, (name, value) =>
               setValues(prev => ({ ...prev, [name]: value })))}
-            {renderControl("fatigue", values.fatigue, (name, value) => 
+            {renderControl("fatigue", values.fatigue, (name, value) =>
               setValues(prev => ({ ...prev, [name]: value })))}
-            {renderControl("soreness", values.soreness, (name, value) => 
+            {renderControl("soreness", values.soreness, (name, value) =>
               setValues(prev => ({ ...prev, [name]: value })))}
 
             <div className="survey-control">
@@ -277,14 +275,14 @@ export default function WellnessForm() {
 
             {error && <div className="survey-error">{error}</div>}
 
-            <button 
+            <button
               type="submit"
               className="survey-primary"
               style={{ backgroundColor: '#14b8a6' }}
               disabled={
-                !selectedPlayer || 
-                values.sleep === null || 
-                values.fatigue === null || 
+                !selectedPlayer ||
+                values.sleep === null ||
+                values.fatigue === null ||
                 values.soreness === null ||
                 isSaving
               }

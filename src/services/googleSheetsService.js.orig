@@ -1,0 +1,155 @@
+import { scheduleService } from './scheduleService';
+
+// Read endpoints
+const API_BASE = 'http://localhost:5174/api/sheets';
+
+// The dictionary of event types
+const EVENT_KEYWORDS = {
+  GAME_DAY: ["GAME", "MATCH", "FRIENDLY", "CUP", "LEAGUE", "משחק", "משחק אימון", "משחק ליגה", "גביע", "דרבי"],
+  RECOVERY: ["RECOVERY", "REHAB", "REST", "POOL", "COLD TUB", "ICE", "MOBILITY", "התאוששות", "שיקום", "בריכה", "מתיחות", "אמבטיית קרח"],
+  OFF_DAY: ["DAY OFF", "OFF", "HOLIDAY", "VACATION", "HOLIDAYS", "יום חופש", "חופש", "מנוחה", "חג"],
+  TESTING: ["TESTS", "TESTING", "ASSESSMENT", "BEEP TEST", "1RM", "JUMP TEST", "VO2MAX", "טסטים", "מבחנים", "מדידות", "בדיקות"],
+  MEETING: ["VIDEO", "MEETING", "SCOUTING", "TACTICAL PREP", "FILM", "וידאו", "אסיפה", "תדריך", "סקאוטינג", "פגישה"]
+};
+
+// Flags
+const GYM_KEYWORDS = ["SPLIT PRACTICE", "STRENGTH", "WEIGHTS", "GYM", "LIFTING", "INJURY PREV", "CORE", "POWER", "HYPERTROPHY", "חדר כושר", "כוח", "משקולות", "מניעת פציעות", "חיזוקים", "ליבה", "כוח מתפרץ"];
+
+function parseCellText(text, defaultSlot) {
+  if (!text || text.trim() === '') return null;
+  const upperText = text.toUpperCase();
+  
+  let type = "PRACTICE";
+  for (const [key, keywords] of Object.entries(EVENT_KEYWORDS)) {
+    if (keywords.some(kw => upperText.includes(kw))) {
+      type = key;
+      break;
+    }
+  }
+
+  const isGym = GYM_KEYWORDS.some(kw => upperText.includes(kw));
+  
+  // Extract time HH:MM
+  const timeMatch = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  const time = timeMatch ? timeMatch[0] : (defaultSlot === 'AM' ? '09:30' : '18:00');
+
+  return { type, isGym, title: text, time, slot: defaultSlot };
+}
+
+// Convert "16/8/26" to "2026-08-16"
+function parseDateString(dateStr) {
+  if (!dateStr) return null;
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    let [day, month, year] = parts;
+    if (year.length === 2) year = '20' + year;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  return null;
+}
+
+export async function syncScheduleWithGoogleSheets(teamId) {
+  const spreadsheetId = process.env.REACT_APP_GOOGLE_SHEET_ID;
+  if (!spreadsheetId) {
+    throw new Error("REACT_APP_GOOGLE_SHEET_ID is missing in .env.local");
+  }
+
+  // Fetch the entire sheet (Assuming a reasonable size, e.g. Sheet1)
+  const range = 'Sheet1!A1:Z1000';
+  const res = await fetch(`${API_BASE}/read?spreadsheetId=${spreadsheetId}&range=${range}`);
+  if (!res.ok) throw new Error("Failed to read from Google Sheets API");
+  const data = await res.json();
+  const rows = data.values || [];
+
+  // Parse structural rows
+  let i = 0;
+  const parsedEvents = [];
+  
+  while (i < rows.length) {
+    // Look for Date Row - it should have dates like 16/8/26
+    const row = rows[i];
+    if (row && row.some(cell => typeof cell === 'string' && cell.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/))) {
+      // Structure found
+      const dateRow = rows[i];
+      // Skip the label column (e.g. index 0), assume columns 1 to 7 are dates
+      const dates = [];
+      for (let c = 1; c < dateRow.length; c++) {
+        const d = parseDateString(dateRow[c]);
+        if (d) dates[c] = d;
+      }
+      
+      // rows[i+1] -> Day Name Row
+      // rows[i+2] -> Microcycle Header
+      // rows[i+3] -> Morning Practice
+      // rows[i+4] -> Evening Practice
+      const morningRow = rows[i + 3] || [];
+      const eveningRow = rows[i + 4] || [];
+
+      // Process columns based on found dates
+      for (let c = 1; c < dateRow.length; c++) {
+        const dateStr = dates[c];
+        if (!dateStr) continue;
+
+        // Morning
+        if (morningRow[c]) {
+          const morningEvent = parseCellText(morningRow[c], 'AM');
+          if (morningEvent) {
+            parsedEvents.push({ ...morningEvent, date: dateStr, created: new Date().toISOString() });
+          }
+        }
+        
+        // Evening
+        if (eveningRow[c]) {
+          const eveningEvent = parseCellText(eveningRow[c], 'PM');
+          if (eveningEvent) {
+            parsedEvents.push({ ...eveningEvent, date: dateStr, created: new Date().toISOString() });
+          }
+        }
+      }
+      
+      i += 5; // jump over this block
+    } else {
+      i++;
+    }
+  }
+
+  // Push to Firestore via scheduleService
+  console.log("Parsed Events from Sheets:", parsedEvents);
+  
+  // We should either merge with existing or clear and replace
+  // The simplest is to find existing events and over-write or avoid duplicates.
+  // The user rule says: "store the events in Firestore under teams/{teamId}/schedule/{YYYY-MM-DD}"
+  // Wait, scheduleService.addScheduleEvent expects standard event object and uses auto ID.
+  const existingEvents = await scheduleService.getScheduleEvents(teamId);
+  const existingSet = new Set(existingEvents.map(e => `${e.date}|${e.slot}|${e.type}`));
+
+  let added = 0;
+  for (const event of parsedEvents) {
+    const key = `${event.date}|${event.slot}|${event.type}`;
+    if (!existingSet.has(key)) {
+      await scheduleService.addScheduleEvent(event, teamId);
+      added++;
+    }
+  }
+
+  return { added, totalFound: parsedEvents.length };
+}
+
+export async function pushUpdateToGoogleSheets(spreadsheetId, sheetName, row, col, value) {
+  // Convert col index to letter (A, B, C...)
+  // Note: a robust write would use google API update using cell A1 notation
+  const colLetter = String.fromCharCode(65 + col);
+  const requestRange = `${sheetName}!${colLetter}${row}`;
+  
+  const res = await fetch(`${API_BASE}/write`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      spreadsheetId,
+      range: requestRange,
+      values: [[value]]
+    })
+  });
+  if (!res.ok) throw new Error("Failed to write to Google Sheets");
+  return res.json();
+}

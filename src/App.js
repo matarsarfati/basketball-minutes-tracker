@@ -5,6 +5,7 @@ import { Play, Pause, Users, Eye, EyeOff, UserPlus, UserMinus, RotateCcw, AlertC
 import { Link } from 'react-router-dom';
 import './App.css';
 import { rosterService } from './services/rosterService';
+import { useTeam } from './context/TeamContext';
 
 
 /* ==== Constants ==== */
@@ -34,6 +35,7 @@ const computeQuarter = (time) => {
 };
 
 function MinutesTracker() {
+  const { activeTeam } = useTeam();
   /* ==== Game State ==== */
   const [gameTime, setGameTime] = useState(TOTAL_GAME_SECONDS);
   const [currentQuarter, setCurrentQuarter] = useState(1);
@@ -151,16 +153,16 @@ function MinutesTracker() {
                   currentRestTime: 0,
                   ...(p.isPlaying
                     ? {
-                        playingSessions: p.playingSessions
-                          .map((s, idx) =>
-                            idx === p.playingSessions.length - 1 && s.isActive
-                              ? { ...s, end: formatQuarterTime(newTime), isActive: false }
-                              : s
-                          )
-                          .concat([
-                            { start: '10:00', end: '', quarter: nextQ, isActive: true },
-                          ]),
-                      }
+                      playingSessions: p.playingSessions
+                        .map((s, idx) =>
+                          idx === p.playingSessions.length - 1 && s.isActive
+                            ? { ...s, end: formatQuarterTime(newTime), isActive: false }
+                            : s
+                        )
+                        .concat([
+                          { start: '10:00', end: '', quarter: nextQ, isActive: true },
+                        ]),
+                    }
                     : {}),
                 }))
               );
@@ -227,21 +229,21 @@ function MinutesTracker() {
       arr.map((p) =>
         p.id === playerId
           ? {
-              ...p,
-              isPlaying: true,
-              currentSessionStart: gameTime,
-              currentRestTime: 0,
-              hasEverPlayed: true,
-              playingSessions: [
-                ...p.playingSessions,
-                {
-                  start: formatQuarterTime(gameTime),
-                  end: '',
-                  quarter: currentQuarter,
-                  isActive: true,
-                },
-              ],
-            }
+            ...p,
+            isPlaying: true,
+            currentSessionStart: gameTime,
+            currentRestTime: 0,
+            hasEverPlayed: true,
+            playingSessions: [
+              ...p.playingSessions,
+              {
+                start: formatQuarterTime(gameTime),
+                end: '',
+                quarter: currentQuarter,
+                isActive: true,
+              },
+            ],
+          }
           : p
       )
     );
@@ -380,6 +382,36 @@ function MinutesTracker() {
 
   const playersOverEight = getPlayersOverEightMinutes();
 
+  const generateMinutesMockData = () => {
+    if (!window.confirm("Generate mock playing time for players?")) return;
+
+    // Save state before making substitution
+    saveToHistory();
+
+    setGameTime(0);
+    setCurrentQuarter(4);
+    setIsQuarterBreak(true);
+    setGameStarted(true);
+
+    setPlayers(prev => prev.map((p, i) => {
+      const isGuard = p.number < 15;
+      const totalMin = isGuard ? 32 + (i % 5) : 18 + (i % 10);
+      const totalSecs = totalMin * 60;
+      return {
+        ...p,
+        isPlaying: false,
+        totalMinutes: totalSecs,
+        currentSessionStart: 0,
+        hasEverPlayed: true,
+        playingSessions: [
+          { start: '10:00', end: '02:00', quarter: 1, isActive: false },
+          { start: '08:00', end: '00:00', quarter: 2, isActive: false },
+          { start: '10:00', end: '04:00', quarter: 3, isActive: false }
+        ]
+      }
+    }));
+  };
+
   if (isLoadingRoster) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
@@ -395,6 +427,11 @@ function MinutesTracker() {
     <div className="min-h-screen bg-slate-100">
       <div className="app-container">
         <div style={{ padding: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Link to="/dashboard">
+            <button style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px' }}>
+              Dashboard
+            </button>
+          </Link>
           <Link to="/schedule">
             <button style={{ padding: '8px 12px', cursor: 'pointer' }}>
               Go to Schedule
@@ -416,6 +453,11 @@ function MinutesTracker() {
           <div className="header">
             <Users className="header-icon" />
             <h1>Basketball Minutes Tracker</h1>
+            {activeTeam?.isMock && (
+              <button onClick={generateMinutesMockData} className="px-4 py-2 bg-amber-100 text-amber-700 font-bold rounded shadow-sm hover:bg-amber-200 border-amber-300 ml-auto flex items-center">
+                ✨ Generate Mock Data
+              </button>
+            )}
           </div>
 
           <div className="main-timer">
@@ -559,55 +601,55 @@ function MinutesTracker() {
                 </thead>
                 <tbody className="table-body">
                   {players.map((p) => (
-                  <tr key={p.id} className="table-row">
-                    <td className="table-cell">
-                      <div className="player-number">#{p.number}</div>
-                    </td>
-                    <td className="table-cell">
-                      <div className="player-name">{p.name}</div>
-                      {getLastSessionText(p) && (
-                        <div
-                          className="session-info"
-                          onClick={() => showPlayerHistory(p)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          {getLastSessionText(p)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="table-cell">
-                      <span className={`status-badge ${p.isPlaying ? 'status-playing' : 'status-bench'}`}>
-                        {p.isPlaying ? 'Playing' : 'Bench'}
-                      </span>
-                    </td>
-                    <td className="table-cell">
-                      <div className="time-display time-total">
-                        {formatTime(p.totalMinutes + (p.isPlaying ? p.currentSessionStart - gameTime : 0))}
-                      </div>
-                    </td>
-                    <td className="table-cell">
-                      <div className={`time-display ${p.isPlaying ? 'time-total' : 'time-playing'}`}>
-                        {p.isPlaying ? formatTime(p.currentSessionStart - gameTime) : '00:00'}
-                      </div>
-                    </td>
-                    <td className="table-cell">
-                      <div className="rest-time-container">
-                        <span className={`time-display ${p.isPlaying ? 'time-playing' : 'time-rest'}`}>
-                          {p.showRestTime ? formatTime(getConsecutiveRestTime(p)) : '••:••'}
+                    <tr key={p.id} className="table-row">
+                      <td className="table-cell">
+                        <div className="player-number">#{p.number}</div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="player-name">{p.name}</div>
+                        {getLastSessionText(p) && (
+                          <div
+                            className="session-info"
+                            onClick={() => showPlayerHistory(p)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {getLastSessionText(p)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="table-cell">
+                        <span className={`status-badge ${p.isPlaying ? 'status-playing' : 'status-bench'}`}>
+                          {p.isPlaying ? 'Playing' : 'Bench'}
                         </span>
-                        <button onClick={() => toggleRestTimeVisibility(p.id)} className="eye-button">
-                          {p.showRestTime ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </td>
+                      <td className="table-cell">
+                        <div className="time-display time-total">
+                          {formatTime(p.totalMinutes + (p.isPlaying ? p.currentSessionStart - gameTime : 0))}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <div className={`time-display ${p.isPlaying ? 'time-total' : 'time-playing'}`}>
+                          {p.isPlaying ? formatTime(p.currentSessionStart - gameTime) : '00:00'}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="rest-time-container">
+                          <span className={`time-display ${p.isPlaying ? 'time-playing' : 'time-rest'}`}>
+                            {p.showRestTime ? formatTime(getConsecutiveRestTime(p)) : '••:••'}
+                          </span>
+                          <button onClick={() => toggleRestTimeVisibility(p.id)} className="eye-button">
+                            {p.showRestTime ? <Eye size={16} /> : <EyeOff size={16} />}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <button
+                          onClick={() => (p.isPlaying ? takePlayerOut(p.id) : putPlayerIn(p.id))}
+                          className={`action-button ${p.isPlaying ? 'button-out' : 'button-in'}`}
+                        >
+                          {p.isPlaying ? 'Out' : 'In'}
                         </button>
-                      </div>
-                    </td>
-                    <td className="table-cell">
-                      <button
-                        onClick={() => (p.isPlaying ? takePlayerOut(p.id) : putPlayerIn(p.id))}
-                        className={`action-button ${p.isPlaying ? 'button-out' : 'button-in'}`}
-                      >
-                        {p.isPlaying ? 'Out' : 'In'}
-                      </button>
-                    </td>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

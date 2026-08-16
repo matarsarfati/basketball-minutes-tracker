@@ -164,7 +164,7 @@ export default function RPEWeeklyReport() {
     from.setDate(today.getDate() - 7);
     const to = new Date(today);
     to.setDate(today.getDate() + 7);
-    
+
     setFromDate(from.toISOString().split('T')[0]);
     setToDate(to.toISOString().split('T')[0]);
   };
@@ -173,11 +173,11 @@ export default function RPEWeeklyReport() {
   const calculateStats = (type) => {
     const planned = filteredData.map(d => d[`planned${type}RPE`]).filter(v => v);
     const actual = filteredData.map(d => d[`actual${type}RPE`]).filter(v => v);
-    
-    const avgPlanned = planned.length ? (planned.reduce((a,b) => a + b, 0) / planned.length).toFixed(1) : 0;
-    const avgActual = actual.length ? (actual.reduce((a,b) => a + b, 0) / actual.length).toFixed(1) : 0;
+
+    const avgPlanned = planned.length ? (planned.reduce((a, b) => a + b, 0) / planned.length).toFixed(1) : 0;
+    const avgActual = actual.length ? (actual.reduce((a, b) => a + b, 0) / actual.length).toFixed(1) : 0;
     const variance = (avgActual - avgPlanned).toFixed(1);
-    
+
     return { avgPlanned, avgActual, variance };
   };
 
@@ -185,9 +185,9 @@ export default function RPEWeeklyReport() {
   const gymStats = calculateStats('Gym');
 
   const durationStats = {
-    avgPlanned: filteredData.filter(d => d.plannedDuration).length ? 
+    avgPlanned: filteredData.filter(d => d.plannedDuration).length ?
       Math.round(filteredData.reduce((sum, d) => sum + (d.plannedDuration || 0), 0) / filteredData.filter(d => d.plannedDuration).length) : 0,
-    avgActual: filteredData.filter(d => d.actualDuration).length ? 
+    avgActual: filteredData.filter(d => d.actualDuration).length ?
       Math.round(filteredData.reduce((sum, d) => sum + (d.actualDuration || 0), 0) / filteredData.filter(d => d.actualDuration).length) : 0
   };
   durationStats.variance = durationStats.avgActual - durationStats.avgPlanned;
@@ -337,10 +337,10 @@ export default function RPEWeeklyReport() {
       </div>
 
       {/* Date Range & Export */}
-      <div style={{ 
-        backgroundColor: 'white', 
-        padding: '16px', 
-        borderRadius: '8px', 
+      <div style={{
+        backgroundColor: 'white',
+        padding: '16px',
+        borderRadius: '8px',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
         marginBottom: '24px',
         display: 'flex',

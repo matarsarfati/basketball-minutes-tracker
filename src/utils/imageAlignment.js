@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 /**
  * Image alignment and processing utilities for exercise image merging
  */

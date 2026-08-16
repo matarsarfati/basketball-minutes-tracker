@@ -3,10 +3,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom";
 import RosterManager from './RosterManager';
 import { scheduleService } from './services/scheduleService';
+import { syncScheduleWithGoogleSheets, pushUpdateToGoogleSheets } from './services/googleSheetsService';
 import { practiceDataService } from './services/practiceDataService';
 import FilterComponent from './FilterComponent';
 import { exportScheduleToPDF, countSessionsInRange } from './services/scheduleExportService';
 import DateRangeModal from './components/DateRangeModal';
+import { useTeam } from './context/TeamContext';
 
 const STORAGE_KEY_V1 = "teamScheduleV1";
 const STORAGE_KEY_V2 = "teamScheduleV2";
@@ -301,14 +303,9 @@ const getMonthDays = activeDate => {
   return days;
 };
 
-const isSameDay = (dateA, dateB) =>
-  dateA.getUTCFullYear() === dateB.getUTCFullYear() &&
-  dateA.getUTCMonth() === dateB.getUTCMonth() &&
-  dateA.getUTCDate() === dateB.getUTCDate();
-
 const isToday = date => toISODate(date) === getTodayISO();
 
-const isSameMonth = (date, reference) => date.getUTCMonth() === reference.getUTCMonth();
+
 
 const formatDayNum = date => `${date.getUTCDate()}`;
 
@@ -327,7 +324,7 @@ const formatTypeLabel = type => {
 
 const paletteForType = type => TYPE_COLORS[type] || TYPE_COLORS.Default;
 
-const noop = () => {};
+const noop = () => { };
 
 const splitISOToParts = iso => {
   if (!iso || typeof iso !== "string" || iso.length < 8) {
@@ -347,8 +344,6 @@ const combineDateParts = ({ day = "", month = "", year = "" }) => {
   }
   return "";
 };
-
-const areDatePartsEmpty = ({ day = "", month = "", year = "" }) => !day && !month && !year;
 
 const splitTimeToParts = time => {
   if (!time || typeof time !== "string" || time.length < 4) {
@@ -399,7 +394,7 @@ const setupAutoAdvance = (root, configRef) => {
 
   if (!root) {
     console.warn('No root element provided to setupAutoAdvance');
-    return () => {};
+    return () => { };
   }
 
   const InputEvt = typeof InputEvent === "undefined" ? null : InputEvent;
@@ -587,12 +582,12 @@ const getSessionMetrics = session => {
     session.courts !== "" && session.courts !== null && session.courts !== undefined
       ? Number(session.courts)
       : 0;
-  const rpeCourtPlanned = 
-    session.rpeCourtPlanned !== "" && session.rpeCourtPlanned !== null 
+  const rpeCourtPlanned =
+    session.rpeCourtPlanned !== "" && session.rpeCourtPlanned !== null
       ? Number(session.rpeCourtPlanned)
       : 0;
-  const rpeGymPlanned = 
-    session.rpeGymPlanned !== "" && session.rpeGymPlanned !== null 
+  const rpeGymPlanned =
+    session.rpeGymPlanned !== "" && session.rpeGymPlanned !== null
       ? Number(session.rpeGymPlanned)
       : 0;
   return {
@@ -602,12 +597,6 @@ const getSessionMetrics = session => {
     rpeCourtPlanned,
     rpeGymPlanned
   };
-};
-
-const toTimestamp = (date, time) => {
-  if (!date) return 0;
-  const safeTime = isValidTimeString(time) ? time : "00:00";
-  return Date.parse(`${date}T${safeTime}:00`);
 };
 
 const getTodayISO = () => {
@@ -684,15 +673,16 @@ const loadLocalStorage = () => {
 
 export default function SchedulePlanner() {
   const navigate = useNavigate();
+  const { activeTeam } = useTeam();
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false); // Add this line
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const sheetUpdateTimeoutRef = useRef({});
   const currentMonth = useMemo(() => getCurrentMonthRange(), []);
   const [fromDate, setFromDate] = useState(currentMonth.startISO);
   const [toDate, setToDate] = useState(currentMonth.endISO);
-  const [fromInput, setFromInput] = useState(currentMonth.startISO);
-  const [toInput, setToInput] = useState(currentMonth.endISO);
   const [viewMonth, setViewMonth] = useState(currentMonth.startDate);
   const [editorSessionId, setEditorSessionId] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
@@ -722,10 +712,10 @@ export default function SchedulePlanner() {
     const loadSessions = async () => {
       try {
         const firebaseSessions = await scheduleService.getScheduleEvents();
-        console.log('Loaded sessions:', firebaseSessions.map(s => ({ 
-          id: s.id, 
+        console.log('Loaded sessions:', firebaseSessions.map(s => ({
+          id: s.id,
           firebaseId: s.firebaseId,
-          date: s.date 
+          date: s.date
         })));
         setSessions(firebaseSessions);
       } catch (error) {
@@ -751,12 +741,10 @@ export default function SchedulePlanner() {
       setFromParts(prev => {
         if (prev[part] === value) return prev;
         const next = { ...prev, [part]: value };
-        const iso = combineDateParts(next);
-        setFromInput(iso);
         return next;
       });
     },
-    [setFromInput]
+    []
   );
 
   const updateToPart = useCallback(
@@ -764,12 +752,10 @@ export default function SchedulePlanner() {
       setToParts(prev => {
         if (prev[part] === value) return prev;
         const next = { ...prev, [part]: value };
-        const iso = combineDateParts(next);
-        setToInput(iso);
         return next;
       });
     },
-    [setToInput]
+    []
   );
 
   const updateNewDatePart = useCallback(
@@ -798,15 +784,27 @@ export default function SchedulePlanner() {
     [setNewSessionForm]
   );
 
-  const mutateSession = async (sessionId, mutator) => {
+  const mutateSession = useCallback(async (sessionId, mutator) => {
     setSessions(prev => {
       const session = prev.find(s => s.id === sessionId);
       if (!session) return prev;
 
       const updated = mutator(session);
-      const updatedSessions = prev.map(existing => 
+      const updatedSessions = prev.map(existing =>
         existing.id !== sessionId ? existing : updated
       );
+
+
+      // Google Sheets sync for title changes
+      if (updated.sheetRef && session.title !== updated.title) {
+        if (sheetUpdateTimeoutRef.current[updated.sheetRef]) {
+          clearTimeout(sheetUpdateTimeoutRef.current[updated.sheetRef]);
+        }
+        sheetUpdateTimeoutRef.current[updated.sheetRef] = setTimeout(() => {
+          pushUpdateToGoogleSheets(process.env.REACT_APP_GOOGLE_SHEET_ID, updated.sheetRef, updated.title)
+            .catch(err => console.log("Sheets update failed:", err));
+        }, 1000);
+      }
 
       // Sync to Firebase
       if (session.firebaseId) {
@@ -819,6 +817,92 @@ export default function SchedulePlanner() {
 
       return updatedSessions;
     });
+  }, []);
+
+  const handleSyncGoogleSheets = async () => {
+    if (!activeTeam?.id) return;
+    setIsSyncingSheets(true);
+    try {
+      const result = await syncScheduleWithGoogleSheets(activeTeam.id);
+      alert(`Sync Complete! Added ${result.added} new events (Total processed: ${result.totalFound})`);
+      // Reload sessions
+      const events = await scheduleService.getScheduleEvents(activeTeam.id);
+      setSessions(
+        events.map(e => ({
+          ...e,
+          id: e.id || Math.random().toString(),
+          parts: Array.isArray(e.parts) ? e.parts : []
+        }))
+      );
+    } catch (error) {
+      console.log("Google Sheets Sync Error:", error);
+      alert("Failed to sync with Google Sheets: " + error.message);
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
+  const generateScheduleMockData = async () => {
+    if (!window.confirm("Generate mock schedule for the current month?")) return;
+    setIsLoading(true);
+    try {
+      if (!activeTeam?.id) throw new Error("No active team");
+
+      const newSessions = [];
+      const days = getMonthDays(viewMonth);
+
+      for (const day of days) {
+        const iso = toISODate(day);
+        const dayOfWeek = day.getUTCDay(); // 0 is Sunday
+
+        // Tuesday/Thursday => Practice
+        // Saturday => Game
+        // Sunday => Recovery
+        if (dayOfWeek === 2 || dayOfWeek === 4) {
+          const s = emptySession(iso, "PM");
+          s.title = "Tactical Practice";
+          s.startTime = "18:00";
+          s.type = "Practice";
+          s.totalMinutes = 120;
+          s.highIntensityMinutes = 45;
+          s.rpeCourtPlanned = 7;
+          s.rpeGymPlanned = 5;
+          newSessions.push(s);
+        } else if (dayOfWeek === 6) {
+          const s = emptySession(iso, "PM");
+          s.title = "League Match";
+          s.startTime = "20:00";
+          s.type = "Game";
+          s.totalMinutes = 150;
+          s.highIntensityMinutes = 80;
+          s.rpeCourtPlanned = 9;
+          newSessions.push(s);
+        } else if (dayOfWeek === 0) {
+          const s = emptySession(iso, "AM");
+          s.title = "Recovery & Video";
+          s.startTime = "10:00";
+          s.type = "Recovery";
+          s.totalMinutes = 60;
+          s.highIntensityMinutes = 0;
+          s.rpeCourtPlanned = 3;
+          s.rpeGymPlanned = 2;
+          newSessions.push(s);
+        }
+      }
+
+      const addedSessions = [];
+      for (const s of newSessions) {
+        const id = await scheduleService.addScheduleEvent(s, activeTeam?.id);
+        addedSessions.push({ ...s, firebaseId: id, id });
+      }
+
+      setSessions(prev => [...prev, ...addedSessions]);
+      alert("Mock schedule generated!");
+    } catch (e) {
+      alert("Failed to generate mock schedule");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const addPart = sessionId => {
@@ -852,23 +936,6 @@ export default function SchedulePlanner() {
   }, [sessions]);
 
   // Keep existing visibleSessions for filtered data (exports/reports)
-  const visibleSessions = useMemo(() => {
-    const slotOrder = new Map(SLOT_OPTIONS.map((slot, index) => [slot, index]));
-    return [...sessions]
-      .filter(session => {
-        if (!session.date) return false;
-        const fromPass = !fromDate || session.date >= fromDate;
-        const toPass = !toDate || session.date <= toDate;
-        return fromPass && toPass;
-      })
-      .sort((a, b) => {
-        const dateCompare = a.date.localeCompare(b.date);
-        if (dateCompare !== 0) return dateCompare;
-        const slotCompare = (slotOrder.get(a.slot) ?? 0) - (slotOrder.get(b.slot) ?? 0);
-        if (slotCompare !== 0) return slotCompare;
-        return (a.startTime || "").localeCompare(b.startTime || "");
-      });
-  }, [sessions, fromDate, toDate]);
 
   // Update sessionsByDate to use calendarSessions instead of visibleSessions
   const sessionsByDate = useMemo(() => {
@@ -971,8 +1038,6 @@ export default function SchedulePlanner() {
     setFromDate(appliedFrom);
     setToDate(effectiveTo);
     setViewMonth(targetMonth);
-    setFromInput(appliedFrom);
-    setToInput(effectiveTo);
     setFromParts(splitISOToParts(appliedFrom));
     setToParts(splitISOToParts(effectiveTo));
   };
@@ -981,8 +1046,6 @@ export default function SchedulePlanner() {
     const { startDate, startISO, endISO } = getCurrentMonthRange();
     setFromDate(startISO);
     setToDate(endISO);
-    setFromInput(startISO);
-    setToInput(endISO);
     setFromParts(splitISOToParts(startISO));
     setToParts(splitISOToParts(endISO));
     setViewMonth(startDate);
@@ -1017,24 +1080,6 @@ export default function SchedulePlanner() {
     }
   };
 
-  const prefillAddSession = (date, slot) => {
-    setSelectedSessionId(null);
-    setTrainingExpanded(true);
-    setNewSessionForm(prev => ({
-      ...prev,
-      date,
-      slot,
-      startTime: "",
-    }));
-    setNewDateParts(splitISOToParts(date));
-    setNewTimeParts(splitTimeToParts(""));
-    scrollToAddForm();
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        startTimeInputRef.current?.focus();
-      });
-    }
-  };
 
   const addSession = async () => {
     const { date, slot, startTime, type } = newSessionForm;
@@ -1053,8 +1098,8 @@ export default function SchedulePlanner() {
     if (type !== "Meeting") {
       const exists = sessions.some(
         session => session.date === date &&
-        session.slot === slotValue &&
-        session.type !== "Meeting"
+          session.slot === slotValue &&
+          session.type !== "Meeting"
       );
       if (exists) {
         alert(`A ${slotValue} session already exists for ${date}.`);
@@ -1085,16 +1130,16 @@ export default function SchedulePlanner() {
   const deleteSession = async (id) => {
     const target = sessions.find(session => session.id === id);
     if (!target) return;
-    
-    console.log('Deleting session:', { 
-      id: target.id, 
+
+    console.log('Deleting session:', {
+      id: target.id,
       firebaseId: target.firebaseId,
-      date: target.date 
+      date: target.date
     });
-    
+
     const label = `${target.date} ${target.slot}`;
     if (!window.confirm(`Delete session ${label}? This will also delete all practice data (attendance, metrics, drills, surveys).`)) return;
-  
+
     try {
       // Delete schedule event
       if (target.firebaseId) {
@@ -1103,7 +1148,7 @@ export default function SchedulePlanner() {
       } else {
         console.warn('No firebaseId found for session:', target.id);
       }
-      
+
       // Delete associated practice data
       try {
         await practiceDataService.deletePracticeData(id);
@@ -1112,13 +1157,13 @@ export default function SchedulePlanner() {
         console.error('Failed to delete practice data:', practiceError);
         // Continue with session deletion even if practice data fails
       }
-      
+
       // Clean up localStorage
       localStorage.removeItem(`practiceData_${id}`);
       localStorage.removeItem(`attendance_${id}`);
       localStorage.removeItem(`summaries_${id}`);
       localStorage.removeItem(`surveyPlayers_${id}`);
-      
+
       setSessions(prev => prev.filter(session => session.id !== id));
       setSelectedSessionId(prev => (prev === id ? null : prev));
       if (editorSessionId === id) {
@@ -1130,7 +1175,7 @@ export default function SchedulePlanner() {
     }
   };
 
-  const updateSessionField = (sessionId, field, value) => {
+  const updateSessionField = useCallback((sessionId, field, value) => {
     mutateSession(sessionId, session => {
       let parsedValue = value;
 
@@ -1159,7 +1204,7 @@ export default function SchedulePlanner() {
 
       return updatedSession;
     });
-  };
+  }, [mutateSession]);
 
   const updateEditorTimePart = useCallback(
     (part, value) => {
@@ -1346,7 +1391,7 @@ export default function SchedulePlanner() {
 
   // Modify the useEffect for setupAutoAdvance to handle dynamic rendering of fields
   useEffect(() => {
-    let cleanup = () => {};
+    let cleanup = () => { };
 
     const setupForm = () => {
       if (addFormRef.current) {
@@ -1402,28 +1447,28 @@ export default function SchedulePlanner() {
     setTimeout(verifyTimeInputSetup, 1000);
   }, []);
 
-const updatePart = (sessionId, partId, field, value) => {
-  mutateSession(sessionId, session => {
-    const updatedSession = {
-      ...session,
-      parts: session.parts.map(part => {
-        if (part.id !== partId) return part;
-        if (field === "minutes") {
-          return { ...part, minutes: value === "" ? "" : Math.max(0, Number(value)) };
-        }
-        if (field === "highIntensity") {
-          return { ...part, highIntensity: Boolean(value) };
-        }
-        return { ...part, [field]: value };
-      }),
-    };
-    
-    // Save to Firebase
-    practiceDataService.syncScheduleWithPractice(sessionId, updatedSession).catch(console.error);
-    
-    return updatedSession;
-  });
-};
+  const updatePart = (sessionId, partId, field, value) => {
+    mutateSession(sessionId, session => {
+      const updatedSession = {
+        ...session,
+        parts: session.parts.map(part => {
+          if (part.id !== partId) return part;
+          if (field === "minutes") {
+            return { ...part, minutes: value === "" ? "" : Math.max(0, Number(value)) };
+          }
+          if (field === "highIntensity") {
+            return { ...part, highIntensity: Boolean(value) };
+          }
+          return { ...part, [field]: value };
+        }),
+      };
+
+      // Save to Firebase
+      practiceDataService.syncScheduleWithPractice(sessionId, updatedSession).catch(console.error);
+
+      return updatedSession;
+    });
+  };
 
   const removePart = (sessionId, partId) => {
     mutateSession(sessionId, session => ({
@@ -1450,9 +1495,8 @@ const updatePart = (sessionId, partId, field, value) => {
     const palette = paletteForType(session.type);
     const typeLabel = formatTypeLabel(session.type) || session.type || "Session";
     const title = session.title ? session.title.trim() || typeLabel : typeLabel;
-    const ariaLabel = `${formatDisplayDate(dateISO)}, ${timeText}, ${typeLabel}. ${
-      showStats ? `Total ${totalMinutes}m, High Intensity ${highMinutes}m, Courts ${courts}.` : ""
-    }`;
+    const ariaLabel = `${formatDisplayDate(dateISO)}, ${timeText}, ${typeLabel}. ${showStats ? `Total ${totalMinutes}m, High Intensity ${highMinutes}m, Courts ${courts}.` : ""
+      }`;
 
     const handleClick = event => {
       event.stopPropagation();
@@ -1747,7 +1791,7 @@ const updatePart = (sessionId, partId, field, value) => {
       exportDateRange.endDate,
       toISODate
     );
-  }, [exportDateRange, sessions, toISODate]);
+  }, [exportDateRange, sessions]);
 
   // Handle PDF export with date range selection
   const handleExportPDF = () => {
@@ -1818,8 +1862,8 @@ const updatePart = (sessionId, partId, field, value) => {
       <style>{globalStyles}</style>
       <div ref={schedulePageRef} className="schedule-page">
         <div className="schedule-page__nav">
-          <Link to="/" className="btn btn-secondary">
-            Back to Game Minutes
+          <Link to="/dashboard" className="btn btn-secondary">
+            Back to Dashboard
           </Link>
           <button
             className="btn btn-secondary"
@@ -1827,6 +1871,14 @@ const updatePart = (sessionId, partId, field, value) => {
             disabled={isExporting}
           >
             {isExporting ? "Generating PDF..." : "Export PDF"}
+          </button>
+          <button
+            onClick={handleSyncGoogleSheets}
+            className="btn btn-primary"
+            style={{ backgroundColor: '#10b981', color: 'white' }}
+            disabled={isSyncingSheets}
+          >
+            {isSyncingSheets ? "Syncing..." : "Sync with Sheets"}
           </button>
           <button
             onClick={() => navigate('/wellness')}
@@ -1847,24 +1899,23 @@ const updatePart = (sessionId, partId, field, value) => {
           <button
             onClick={() => navigate('/rpe-report')}
             className="btn btn-secondary"
-            style={{
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
           >
             📊 RPE Weekly Report
           </button>
+          {activeTeam?.isMock && (
+            <button
+              onClick={generateScheduleMockData}
+              className="btn btn-secondary"
+              style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d', padding: '8px 16px', borderRadius: '6px' }}
+            >
+              ✨ Generate Mock Data
+            </button>
+          )}
         </div>
 
         <h2 className="schedule-title">📅 Team Schedule Sessions</h2>
 
-        <FilterComponent 
+        <FilterComponent
           fromParts={fromParts}
           toParts={toParts}
           updateFromPart={updateFromPart}
@@ -1894,11 +1945,11 @@ const updatePart = (sessionId, partId, field, value) => {
                   onChange={noop}
                   autoComplete="off"
                   data-auto-field="add-date-day"
-                data-advance-type="day"
-                data-advance-order="1"
-                data-advance-next="add-date-year"
-                aria-label="Session month"
-              />
+                  data-advance-type="day"
+                  data-advance-order="1"
+                  data-advance-next="add-date-year"
+                  aria-label="Session month"
+                />
                 <input
                   id="add-date-year"
                   className="schedule-input schedule-input--segment"
@@ -1910,11 +1961,11 @@ const updatePart = (sessionId, partId, field, value) => {
                   onChange={noop}
                   autoComplete="off"
                   data-auto-field="add-date-year"
-                data-advance-type="year"
-                data-advance-group="add-date"
-                data-advance-order="2"
-                aria-label="Session year"
-              />
+                  data-advance-type="year"
+                  data-advance-group="add-date"
+                  data-advance-order="2"
+                  aria-label="Session year"
+                />
               </div>
             </div>
             <div className="addSessionCard__field">
