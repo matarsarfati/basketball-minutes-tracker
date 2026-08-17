@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom";
 import RosterManager from './RosterManager';
 import { scheduleService } from './services/scheduleService';
-import { syncScheduleWithGoogleSheets, pushUpdateToGoogleSheets } from './services/googleSheetsService';
 import { practiceDataService } from './services/practiceDataService';
 import FilterComponent from './FilterComponent';
 import { exportScheduleToPDF, countSessionsInRange } from './services/scheduleExportService';
@@ -678,7 +677,6 @@ export default function SchedulePlanner() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false); // Add this line
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const sheetUpdateTimeoutRef = useRef({});
   const currentMonth = useMemo(() => getCurrentMonthRange(), []);
   const [fromDate, setFromDate] = useState(currentMonth.startISO);
@@ -794,18 +792,6 @@ export default function SchedulePlanner() {
         existing.id !== sessionId ? existing : updated
       );
 
-
-      // Google Sheets sync for title changes
-      if (updated.sheetRef && session.title !== updated.title) {
-        if (sheetUpdateTimeoutRef.current[updated.sheetRef]) {
-          clearTimeout(sheetUpdateTimeoutRef.current[updated.sheetRef]);
-        }
-        sheetUpdateTimeoutRef.current[updated.sheetRef] = setTimeout(() => {
-          pushUpdateToGoogleSheets(process.env.REACT_APP_GOOGLE_SHEET_ID, updated.sheetRef, updated.title)
-            .catch(err => console.log("Sheets update failed:", err));
-        }, 1000);
-      }
-
       // Sync to Firebase
       if (session.firebaseId) {
         scheduleService.updateScheduleEvent(session.firebaseId, updated)
@@ -818,29 +804,6 @@ export default function SchedulePlanner() {
       return updatedSessions;
     });
   }, []);
-
-  const handleSyncGoogleSheets = async () => {
-    if (!activeTeam?.id) return;
-    setIsSyncingSheets(true);
-    try {
-      const result = await syncScheduleWithGoogleSheets(activeTeam.id);
-      alert(`Sync Complete! Added ${result.added} new events (Total processed: ${result.totalFound})`);
-      // Reload sessions
-      const events = await scheduleService.getScheduleEvents(activeTeam.id);
-      setSessions(
-        events.map(e => ({
-          ...e,
-          id: e.id || Math.random().toString(),
-          parts: Array.isArray(e.parts) ? e.parts : []
-        }))
-      );
-    } catch (error) {
-      console.log("Google Sheets Sync Error:", error);
-      alert("Failed to sync with Google Sheets: " + error.message);
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
 
   const generateScheduleMockData = async () => {
     if (!window.confirm("Generate mock schedule for the current month?")) return;
@@ -1871,14 +1834,6 @@ export default function SchedulePlanner() {
             disabled={isExporting}
           >
             {isExporting ? "Generating PDF..." : "Export PDF"}
-          </button>
-          <button
-            onClick={handleSyncGoogleSheets}
-            className="btn btn-primary"
-            style={{ backgroundColor: '#10b981', color: 'white' }}
-            disabled={isSyncingSheets}
-          >
-            {isSyncingSheets ? "Syncing..." : "Sync with Sheets"}
           </button>
           <button
             onClick={() => navigate('/wellness')}

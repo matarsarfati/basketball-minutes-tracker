@@ -1,7 +1,5 @@
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-
-const SCHEDULE_COLLECTION = 'schedule';
 
 export const scheduleService = {
   getSchedulePath(teamId = null) {
@@ -11,36 +9,6 @@ export const scheduleService = {
   },
 
 
-  async addScheduleEventsBatch(events, teamId = null) {
-    if (!events || events.length === 0) return;
-    const colRef = collection(db, this.getSchedulePath(teamId));
-
-    const CHUNK_SIZE = 400;
-    for (let i = 0; i < events.length; i += CHUNK_SIZE) {
-      const chunk = events.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      chunk.forEach(event => {
-        const newDocRef = doc(colRef);
-        batch.set(newDocRef, event);
-      });
-      await batch.commit();
-    }
-  },
-
-  async deleteScheduleEventsBatch(eventIds, teamId = null) {
-    if (!eventIds || eventIds.length === 0) return;
-
-    const CHUNK_SIZE = 400;
-    for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
-      const chunk = eventIds.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      chunk.forEach(id => {
-        const eventRef = doc(db, this.getSchedulePath(teamId), id);
-        batch.delete(eventRef);
-      });
-      await batch.commit();
-    }
-  },
 
   async addScheduleEvent(eventData, teamId = null) {
     console.log('Attempting to add a new schedule event:', eventData);
