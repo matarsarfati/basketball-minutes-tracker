@@ -237,7 +237,10 @@ const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const isValidTimeString = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 
 const parseISODateToUTC = dateStr => {
-  const [year, month, day] = dateStr.split("-").map(Number);
+  if (!dateStr || typeof dateStr !== "string") return new Date();
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return new Date();
+  const [year, month, day] = parts;
   return new Date(Date.UTC(year, month - 1, day));
 };
 
@@ -541,6 +544,7 @@ const normalizeTimeInput = value => {
 const formatDisplayDate = iso => {
   if (!iso) return "";
   const date = parseISODateToUTC(iso);
+  if (isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
     month: "long",
@@ -552,9 +556,13 @@ const formatDisplayDate = iso => {
 const formatDisplayDateTime = (iso, time) => {
   if (!iso) return "";
   const base = parseISODateToUTC(iso);
+  if (isNaN(base.getTime())) return "";
+
   if (isValidTimeString(time)) {
     const [hours, minutes] = time.split(":").map(Number);
-    base.setUTCHours(hours, minutes, 0, 0);
+    if (!isNaN(hours) && !isNaN(minutes)) {
+      base.setUTCHours(hours, minutes, 0, 0);
+    }
   }
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -570,24 +578,24 @@ const formatDisplayDateTime = (iso, time) => {
 const getSessionMetrics = session => {
   const totals = calcTotalsFromParts(session.parts || []);
   const totalMinutes =
-    session.totalMinutes !== "" && session.totalMinutes !== null
-      ? Number(session.totalMinutes)
+    session.totalMinutes !== "" && session.totalMinutes != null
+      ? Number(session.totalMinutes) || 0
       : totals.totalMinutes;
   const highMinutes =
-    session.highIntensityMinutes !== "" && session.highIntensityMinutes !== null
-      ? Number(session.highIntensityMinutes)
+    session.highIntensityMinutes !== "" && session.highIntensityMinutes != null
+      ? Number(session.highIntensityMinutes) || 0
       : totals.highIntensityMinutes;
   const courts =
-    session.courts !== "" && session.courts !== null && session.courts !== undefined
-      ? Number(session.courts)
+    session.courts !== "" && session.courts != null
+      ? Number(session.courts) || 0
       : 0;
   const rpeCourtPlanned =
-    session.rpeCourtPlanned !== "" && session.rpeCourtPlanned !== null
-      ? Number(session.rpeCourtPlanned)
+    session.rpeCourtPlanned !== "" && session.rpeCourtPlanned != null
+      ? Number(session.rpeCourtPlanned) || 0
       : 0;
   const rpeGymPlanned =
-    session.rpeGymPlanned !== "" && session.rpeGymPlanned !== null
-      ? Number(session.rpeGymPlanned)
+    session.rpeGymPlanned !== "" && session.rpeGymPlanned != null
+      ? Number(session.rpeGymPlanned) || 0
       : 0;
   return {
     totalMinutes,
@@ -705,11 +713,14 @@ export default function SchedulePlanner() {
   // Add a ref for the "Add Session" form container
   const addFormRef = useRef(null);
 
-  // Load sessions from Firebase on mount
+  // Load sessions from Firebase
   useEffect(() => {
+    if (!activeTeam?.id) return;
+
     const loadSessions = async () => {
+      setIsLoading(true);
       try {
-        const firebaseSessions = await scheduleService.getScheduleEvents();
+        const firebaseSessions = await scheduleService.getScheduleEvents(activeTeam.id);
         console.log('Loaded sessions:', firebaseSessions.map(s => ({
           id: s.id,
           firebaseId: s.firebaseId,
@@ -717,7 +728,7 @@ export default function SchedulePlanner() {
         })));
         setSessions(firebaseSessions);
       } catch (error) {
-        console.error('Failed to load from Firebase:', error);
+        console.error(`Failed to load from Firebase for team ${activeTeam.id}:`, error);
         // Fall back to localStorage
         const localSessions = loadLocalStorage();
         setSessions(localSessions);
@@ -726,7 +737,7 @@ export default function SchedulePlanner() {
       }
     };
     loadSessions();
-  }, []);
+  }, [activeTeam?.id]);
 
   // Sync to localStorage as backup
   useEffect(() => {
@@ -782,28 +793,32 @@ export default function SchedulePlanner() {
     [setNewSessionForm]
   );
 
-  const mutateSession = useCallback(async (sessionId, mutator) => {
+  const mutateSession = useCallback((sessionId, mutator) => {
+    let updatedSnapshot = null;
+
     setSessions(prev => {
       const session = prev.find(s => s.id === sessionId);
       if (!session) return prev;
 
-      const updated = mutator(session);
-      const updatedSessions = prev.map(existing =>
-        existing.id !== sessionId ? existing : updated
+      updatedSnapshot = mutator(session);
+      return prev.map(existing =>
+        existing.id !== sessionId ? existing : updatedSnapshot
       );
-
-      // Sync to Firebase
-      if (session.firebaseId) {
-        scheduleService.updateScheduleEvent(session.firebaseId, updated)
-          .catch(error => {
-            console.error('Failed to update session in Firebase:', error);
-            // Consider rolling back the change here
-          });
-      }
-
-      return updatedSessions;
     });
-  }, []);
+
+    // Run the network request outside of the React state updater sequence using a debounce
+    const targetId = updatedSnapshot?.firebaseId || updatedSnapshot?.id;
+    if (updatedSnapshot && targetId) {
+      if (sheetUpdateTimeoutRef.current[targetId]) {
+        clearTimeout(sheetUpdateTimeoutRef.current[targetId]);
+      }
+      sheetUpdateTimeoutRef.current[targetId] = setTimeout(() => {
+        scheduleService.updateScheduleEvent(targetId, updatedSnapshot, activeTeam?.id)
+          .then(() => console.log('Successfully saved edits to DB:', targetId))
+          .catch(error => console.error('Failed to update session in Firebase:', error));
+      }, 1000);
+    }
+  }, [activeTeam?.id]);
 
   const generateScheduleMockData = async () => {
     if (!window.confirm("Generate mock schedule for the current month?")) return;
@@ -1077,7 +1092,7 @@ export default function SchedulePlanner() {
     };
 
     try {
-      const firebaseId = await scheduleService.addScheduleEvent(newSession);
+      const firebaseId = await scheduleService.addScheduleEvent(newSession, activeTeam?.id);
       setSessions(prev => [...prev, { ...newSession, firebaseId }]);
       setNewSessionForm({ date: "", slot: "AM", startTime: "", type: "Practice" });
       setNewDateParts(splitISOToParts(""));
@@ -1105,11 +1120,12 @@ export default function SchedulePlanner() {
 
     try {
       // Delete schedule event
-      if (target.firebaseId) {
-        console.log('Deleting from Firebase:', target.firebaseId);
-        await scheduleService.deleteScheduleEvent(target.firebaseId);
+      const targetId = target.firebaseId || target.id;
+      if (targetId) {
+        console.log('Deleting from Firebase:', targetId);
+        await scheduleService.deleteScheduleEvent(targetId, activeTeam?.id);
       } else {
-        console.warn('No firebaseId found for session:', target.id);
+        console.warn('No ID found for session to delete:', target);
       }
 
       // Delete associated practice data
@@ -1470,7 +1486,7 @@ export default function SchedulePlanner() {
     if (isMeeting) {
       return (
         <button
-          key={session.id}
+          key={session.id || session.firebaseId || Math.random().toString()}
           type="button"
           className="cal-tile cal-tile--meeting"
           onClick={handleClick}
@@ -1503,7 +1519,7 @@ export default function SchedulePlanner() {
 
     return (
       <button
-        key={session.id}
+        key={session.id || session.firebaseId || Math.random().toString()}
         type="button"
         className="cal-tile"
         onClick={handleClick}
@@ -1825,7 +1841,7 @@ export default function SchedulePlanner() {
       <style>{globalStyles}</style>
       <div ref={schedulePageRef} className="schedule-page">
         <div className="schedule-page__nav">
-          <Link to="/dashboard" className="btn btn-secondary">
+          <Link to={`/team/${activeTeam?.id}/dashboard`} className="btn btn-secondary">
             Back to Dashboard
           </Link>
           <button
@@ -1836,7 +1852,7 @@ export default function SchedulePlanner() {
             {isExporting ? "Generating PDF..." : "Export PDF"}
           </button>
           <button
-            onClick={() => navigate('/wellness')}
+            onClick={() => navigate(`/team/${activeTeam?.id}/wellness`)}
             className="btn btn-secondary"
             style={{
               backgroundColor: '#14b8a6',
@@ -1852,7 +1868,7 @@ export default function SchedulePlanner() {
             💪 Daily Wellness Check
           </button>
           <button
-            onClick={() => navigate('/rpe-report')}
+            onClick={() => navigate(`/team/${activeTeam?.id}/rpe-report`)}
             className="btn btn-secondary"
           >
             📊 RPE Weekly Report
@@ -2229,7 +2245,7 @@ export default function SchedulePlanner() {
             <div className="details-actions">
               {selectedSession.type === "Meeting" ? (
                 <Link
-                  to={`/meeting/${selectedSession.id}`}
+                  to={`/team/${activeTeam?.id}/meeting/${selectedSession.id}`}
                   className="btn btn-primary"
                   onClick={closeDetails}
                 >
@@ -2237,7 +2253,7 @@ export default function SchedulePlanner() {
                 </Link>
               ) : (
                 <Link
-                  to={`/practice/${selectedSession.id}`}
+                  to={`/team/${activeTeam?.id}/practice/${selectedSession.id}`}
                   className="btn btn-primary"
                   onClick={closeDetails}
                 >

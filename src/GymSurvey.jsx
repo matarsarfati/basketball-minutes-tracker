@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { practiceDataService } from './services/practiceDataService';
 import { rosterService } from './services/rosterService';
+import { useTeam } from './context/TeamContext';
+import { scheduleService } from './services/scheduleService';
+import SurveySessionSelector from './components/surveys/SurveySessionSelector';
 import {
   getTranslation,
   getRpeText,
@@ -12,10 +15,13 @@ import "./SurveyForm.css";
 const SURVEY_STORE_KEY = "practiceSurveysV1";
 
 export default function GymSurvey() {
-  const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const { activeTeam } = useTeam();
+  const [activeSession, setActiveSession] = useState(null);
+
   const [players, setPlayers] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
-  const [lang, setLang] = useState('he'); // Default to Hebrew
+  const [lang, setLang] = useState('he');
 
   const [rpe, setRpe] = useState(null);
   const [notes, setNotes] = useState('');
@@ -26,69 +32,75 @@ export default function GymSurvey() {
   const [dataError, setDataError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
+  const currentId = activeSession?.id || activeSession?.firebaseId;
+
   useEffect(() => {
-    if (!sessionId) return;
+    if (!activeSession) return;
 
     // Fetch Remote Data
     const loadRemoteData = async () => {
       setIsLoading(true);
       setDataError("");
       try {
-        const [practiceData, allPlayers] = await Promise.all([
-          practiceDataService.getPracticeData(sessionId),
-          rosterService.getPlayers()
-        ]);
+        let practiceData;
+        let allPlayers;
+
+        try {
+          const results = await Promise.all([
+            practiceDataService.getPracticeData(currentId),
+            rosterService.getPlayers()
+          ]);
+          practiceData = results[0];
+          allPlayers = results[1];
+        } catch (err) {
+          console.error(err);
+          allPlayers = [];
+        }
 
         if (!practiceData) {
-          setDataError("Session not found.");
-          return;
+          practiceData = { attendance: {}, surveys: {}, metrics: {} };
         }
 
-        if (practiceData.attendance) {
-          const present = allPlayers
-            .filter(p => practiceData.attendance[p.name]?.present)
-            .map(p => ({
-              id: p.id,
-              name: p.name,
-              number: p.number,
-              preferredLanguage: p.preferredLanguage || 'he'
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+        const hasAttendance = practiceData.attendance && Object.keys(practiceData.attendance).length > 0;
 
-          setPlayers(present);
-        } else {
-          setPlayers([]);
-        }
+        const present = allPlayers
+          .filter(p => hasAttendance ? practiceData.attendance[p.name]?.present : true)
+          .map(p => ({
+            id: p.id,
+            name: p.name,
+            number: p.number,
+            preferredLanguage: p.preferredLanguage || 'he'
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setPlayers(present);
       } catch (err) {
-        console.error('Failed to load remote gym survey data', err);
-        setDataError("Failed to load session data.");
+        console.error('Failed to load remote gym survey data:', err);
+        setDataError("Failed to fetch session practice data.");
       } finally {
         setIsLoading(false);
       }
     };
     loadRemoteData();
 
-    // Set up real-time listener for submissions
+    // Set up real-time listener for Firebase updates
     const unsubscribe = practiceDataService.subscribeToPracticeData(
-      sessionId,
+      currentId,
       (practiceData) => {
         if (practiceData?.gymSurveyData) {
+          // Update store with Firebase data
           setSubmitted(practiceData.gymSurveyData);
-          // Backup to localStorage
           try {
-            localStorage.setItem(
-              `gymSurvey_${sessionId}`,
-              JSON.stringify(practiceData.gymSurveyData)
-            );
+            localStorage.setItem(`gymSurvey_${currentId}`, JSON.stringify(practiceData.gymSurveyData));
           } catch (err) {
-            console.error('Failed to backup gym survey data:', err);
+            console.error('Failed to backup gym data:', err);
           }
         }
       }
     );
 
     return () => unsubscribe();
-  }, [sessionId]);
+  }, [activeSession, currentId]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -102,12 +114,12 @@ export default function GymSurvey() {
 
     try {
       // Save to Firebase FIRST
-      await practiceDataService.updateGymSurveyResponse(sessionId, selectedPlayer, surveyData);
+      await practiceDataService.updateGymSurveyResponse(currentId, selectedPlayer, surveyData);
 
       // Then save to localStorage as backup
       const store = JSON.parse(localStorage.getItem(SURVEY_STORE_KEY) || '{}');
-      store[`${sessionId}_gym`] = {
-        ...(store[`${sessionId}_gym`] || {}),
+      store[`${currentId}_gym`] = {
+        ...(store[`${currentId}_gym`] || {}),
         [selectedPlayer]: surveyData
       };
       localStorage.setItem(SURVEY_STORE_KEY, JSON.stringify(store));
@@ -235,65 +247,17 @@ export default function GymSurvey() {
     );
   }
 
-  if (dataError) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-center p-6 bg-white rounded-xl shadow-lg border border-red-100">
-          <div className="text-4xl mb-4">⚠️</div>
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Unable to load survey</h3>
-          <p className="text-red-500">{dataError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800"
-          >
-            {getTranslation(lang, 'retry')}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  
   return (
-    <div className="min-h-screen bg-gray-50 pb-20" dir={lang === 'he' ? 'rtl' : 'ltr'}>
-      <div className="max-w-4xl mx-auto p-4 space-y-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative">
-          <Link to={`/practice/${sessionId}`} className={`absolute top-6 text-gray-400 hover:text-gray-600 ${lang === 'he' ? 'left-6' : 'right-6'}`}>
-            <span className="text-xl">{lang === 'he' ? '→' : '←'}</span> {getTranslation(lang, 'backToPractice')}
-          </Link>
-
-          <h1 className="text-2xl font-bold text-gray-900 mt-8 mb-6 text-center">{getTranslation(lang, 'gymSurveyTitle')}</h1>
-
-          {/* Conditional Status Section */}
-          {!isLoading && (
-            <div className="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-lg font-bold text-purple-600">
-                  {Object.keys(submitted).length} / {players.length} {getTranslation(lang, 'completedCount')}
-                </span>
-              </div>
-              {pendingPlayers.length > 0 ? (
-                <div>
-                  <div className="text-xs text-purple-800 uppercase font-bold mb-2 tracking-wider">{getTranslation(lang, 'waitingFor')}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {pendingPlayers.map(player => (
-                      <span
-                        key={player.name}
-                        className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
-                      >
-                        {player.name} {player.number ? `#${player.number}` : ''}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 text-green-600 font-medium text-center">
-                  ✅ {getTranslation(lang, 'allComplete')}
-                </div>
-              )}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-6">
+    <div className="flex flex-col flex-1 p-6">
+      <SurveySessionSelector onSessionSelect={setActiveSession} />
+      
+      {activeSession ? (
+        <div className="survey-form mx-auto w-full" style={{maxWidth: "500px"}}>
+          <div className="survey-wrap">
+            <div className="survey-card">
+              <h1 className="text-xl font-bold mb-4">Gym Survey</h1>
+<form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <label className="block text-sm font-bold text-gray-700 uppercase tracking-wide">{getTranslation(lang, 'selectPlayer')}</label>
               <div className="relative">
@@ -366,8 +330,12 @@ export default function GymSurvey() {
               {getTranslation(lang, 'saveResponse')}
             </button>
           </form>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (!isLoading && !dataError) ? (
+        <div className="text-center text-slate-500 mt-10">Please select a session above to begin survey.</div>
+      ) : null}
     </div>
   );
 }

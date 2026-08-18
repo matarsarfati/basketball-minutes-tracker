@@ -475,49 +475,11 @@ const PlanBuilderModal = ({
                     + Block
                   </button>
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        if (!firebaseId) {
-                          alert("Please save the plan first to generate a shareable link.");
-                          return;
-                        }
-                        const url = `${window.location.origin}/gym?planId=${planId}&tv=true`;
-                        window.open(url, '_blank');
-                      }}
-                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
-                      title="Open link in new tab to test"
-                    >
-                      ↗️ Test Link
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!firebaseId) {
-                          alert("Please save the plan first to generate a shareable link.");
-                          return;
-                        }
-                        const url = `${window.location.origin}/gym?planId=${planId}&tv=true`;
-                        navigator.clipboard.writeText(url);
-                        alert('Link copied to clipboard! Share it with your athletes.');
-                      }}
-                      className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200"
-                      title="Copy shareable link"
-                    >
-                      🔗 Copy Share Link
-                    </button>
-                  </div>
-
                   <button
                     onClick={onDuplicate}
                     className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
                   >
                     📋 Duplicate
-                  </button>
-                  <button
-                    onClick={() => onSave()}
-                    className="save-button"
-                  >
-                    💾 Save
                   </button>
                   {!isActive && (
                     <button

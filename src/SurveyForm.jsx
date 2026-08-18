@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { practiceDataService } from './services/practiceDataService';
 import { rosterService } from './services/rosterService';
+import { useTeam } from './context/TeamContext';
+import { scheduleService } from './services/scheduleService';
+import SurveySessionSelector from './components/surveys/SurveySessionSelector';
 import "./SurveyForm.css";
 
 const STORE_KEY = "practiceSurveysV1";
@@ -132,8 +135,9 @@ const QUESTION_LABELS = {
 };
 
 export default function SurveyForm() {
-  const { sessionId } = useParams();
+
   const navigate = useNavigate();
+  const { activeTeam } = useTeam();
 
   const [store, setStore] = useState(() => {
     if (typeof window === "undefined") return {};
@@ -158,43 +162,55 @@ export default function SurveyForm() {
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState("");
 
+  const [activeSession, setActiveSession] = useState(null);
+
   useEffect(() => {
-    if (!sessionId) return;
+    if (!activeSession) return;
+
+    const targetSessionId = activeSession.id || activeSession.firebaseId;
 
     // Fetch Remote Data
     const loadRemoteData = async () => {
       setIsLoading(true);
       setDataError("");
       try {
-        const [practiceData, allPlayers] = await Promise.all([
-          practiceDataService.getPracticeData(sessionId),
-          rosterService.getPlayers()
-        ]);
+        let practiceData;
+        let allPlayers;
+
+        try {
+          const results = await Promise.all([
+            practiceDataService.getPracticeData(targetSessionId),
+            rosterService.getPlayers()
+          ]);
+          practiceData = results[0];
+          allPlayers = results[1];
+        } catch (err) {
+          console.error(err);
+          allPlayers = [];
+        }
 
         if (!practiceData) {
-          setDataError("Session not found. Please check the link.");
-          return;
+          // Initialize a blank state temporarily in memory representing the targeted ID
+          practiceData = { attendance: {}, surveys: {}, metrics: {} };
         }
 
-        if (practiceData.attendance) {
-          const present = allPlayers
-            .filter(p => practiceData.attendance[p.name]?.present)
-            .map(p => ({
-              id: p.id,
-              name: p.name,
-              number: p.number
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+        // Always show all players if attendance has not been strictly locked exclusively
+        const hasAttendance = practiceData.attendance && Object.keys(practiceData.attendance).length > 0;
 
-          setPresentPlayers(present);
-          // Also update localStorage as backup
-          // localStorage.setItem(`surveyPlayers_${sessionId}`, JSON.stringify(present));
-        } else {
-          setPresentPlayers([]);
-        }
+        const present = allPlayers
+          .filter(p => hasAttendance ? practiceData.attendance[p.name]?.present : true)
+          .map(p => ({
+            id: p.id,
+            name: p.name,
+            number: p.number,
+            preferredLanguage: p.preferredLanguage || 'he'
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setPresentPlayers(present);
       } catch (err) {
-        console.error('Failed to load remote survey data', err);
-        setDataError("Failed to load session data.");
+        console.error("Failed to load remote survey data:", err);
+        setDataError("Failed to fetch session practice data.");
       } finally {
         setIsLoading(false);
       }
@@ -203,23 +219,20 @@ export default function SurveyForm() {
 
     // Set up real-time listener for Firebase updates
     const unsubscribe = practiceDataService.subscribeToPracticeData(
-      sessionId,
+      targetSessionId,
       (practiceData) => {
         if (practiceData?.surveyData) {
           // Update store with Firebase data
           setStore(prev => {
             const updatedStore = {
               ...prev,
-              [sessionId]: practiceData.surveyData
+              [targetSessionId]: practiceData.surveyData
             };
-
-            // Backup to localStorage
             try {
               localStorage.setItem(STORE_KEY, JSON.stringify(updatedStore));
             } catch (err) {
               console.error('Failed to backup survey data to localStorage:', err);
             }
-
             return updatedStore;
           });
         }
@@ -227,7 +240,7 @@ export default function SurveyForm() {
     );
 
     return () => unsubscribe();
-  }, [sessionId]);
+  }, [activeSession]);
 
   // Update handleSubmit to use Firebase
   const handleSubmit = async (e) => {
@@ -236,7 +249,7 @@ export default function SurveyForm() {
 
     try {
       // Save to Firebase
-      await practiceDataService.updateSurveyResponse(sessionId, selectedPlayer, {
+      await practiceDataService.updateSurveyResponse(currentId, selectedPlayer, {
         rpe,
         legs,
         notes: notes.trim(),
@@ -245,8 +258,8 @@ export default function SurveyForm() {
 
       // Also save to localStorage as backup
       const surveys = { ...store };
-      surveys[sessionId] = {
-        ...surveys[sessionId],
+      surveys[currentId] = {
+        ...surveys[currentId],
         [selectedPlayer]: {
           rpe,
           legs,
@@ -288,7 +301,7 @@ export default function SurveyForm() {
       const stored = localStorage.getItem(STORE_KEY);
       if (stored) {
         const surveys = JSON.parse(stored);
-        const response = surveys[sessionId]?.[playerName];
+        const response = surveys[currentId]?.[playerName];
         if (response) {
           // Player has already submitted - show info message but don't pre-fill
           setError("ℹ️ You have already submitted a response. Submit again to update it.");
@@ -401,152 +414,115 @@ export default function SurveyForm() {
     );
   }
 
+  const currentId = activeSession?.id || activeSession?.firebaseId;
+
   return (
-    <div className="survey-form">
-      <div className="survey-wrap">
-        <div className="survey-card">
-          {/* Add Back Button */}
-          <div className="mb-4">
-            <button
-              onClick={() => navigate(`/practice/${sessionId}`)}
-              className="text-blue-600 hover:text-blue-800 flex items-center gap-2"
-            >
-              <span>←</span>
-              <span>Back to Live Practice</span>
-            </button>
-          </div>
+    <div className="flex flex-col flex-1 p-6">
+      <SurveySessionSelector onSessionSelect={setActiveSession} />
 
-          <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
+      {activeSession ? (
+        <div className="survey-form mx-auto w-full" style={{ maxWidth: "500px" }}>
+          <div className="survey-wrap">
+            <div className="survey-card">
+              <h1 className="text-xl font-bold mb-4">Practice Survey</h1>
 
-          {/* Enhanced Status Section */}
-          {!isLoading && (
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-center mb-3">
-                <span className="text-2xl font-bold text-blue-600">
-                  {Object.keys(store[sessionId] || {}).length}
-                </span>
-                <span className="text-gray-600"> of </span>
-                <span className="text-2xl font-bold text-blue-600">
-                  {presentPlayers.length}
-                </span>
-                <span className="text-gray-600"> players completed</span>
-              </div>
+              {!isLoading && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="text-center mb-3">
+                    <span className="text-2xl font-bold text-blue-600">
+                      {Object.keys(store[currentId] || {}).length}
+                    </span>
+                    <span className="text-gray-600"> of </span>
+                    <span className="text-2xl font-bold text-blue-600">
+                      {presentPlayers.length}
+                    </span>
+                    <span className="text-gray-600"> players completed</span>
+                  </div>
 
-              {(() => {
-                const completedNames = new Set(Object.keys(store[sessionId] || {}));
-                const pendingPlayers = presentPlayers.filter(
-                  player => !completedNames.has(player.name)
-                );
+                  {(() => {
+                    const completedNames = new Set(Object.keys(store[currentId] || {}));
+                    const pendingPlayers = presentPlayers.filter(
+                      p => !completedNames.has(p.name)
+                    );
 
-                if (pendingPlayers.length > 0) {
-                  return (
-                    <div className="mt-3 pt-3 border-t border-blue-200">
-                      <p className="text-sm font-medium text-gray-700 mb-2">
-                        Still waiting for:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {pendingPlayers.map(player => (
-                          <span
-                            key={player.id}
-                            className="px-3 py-1 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-300"
-                          >
-                            {player.name} {player.number ? `#${player.number}` : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div className="mt-3 pt-3 border-t border-blue-200">
-                      <p className="text-sm font-medium text-green-600 text-center">
-                        ✅ All players have completed the survey!
-                      </p>
-                    </div>
-                  );
-                }
-              })()}
-            </div>
-          )}
-
-          {showSuccess ? (
-            <div className="success-wrap">
-              <div className="success-title">✅ Response Saved!</div>
-              <p className="mb-4 text-center text-gray-600">{successMessage}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSuccess(false);
-                  setSelectedPlayer('');
-                  setRpe(null);
-                  setLegs(null);
-                  setNotes('');
-                  setError('');
-                }}
-                className="survey-primary w-full"
-              >
-                Next Player →
-              </button>
-            </div>
-          ) : (
-            <div className="survey-wrap">
-              <div className="survey-card">
-                <form onSubmit={handleSubmit}>
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium mb-2">Select Player</label>
-                    <div className="relative">
-                      <select
-                        value={selectedPlayer}
-                        onChange={handlePlayerChange}
-                        className="w-full p-2 border rounded"
-                        required
-                        disabled={isLoading}
-                      >
-                        <option value="">{isLoading ? "Loading players..." : "Choose player..."}</option>
-                        {!isLoading && presentPlayers.map((player) => (
-                          <option key={player.id} value={player.name}>
-                            {player.name} {player.number ? `#${player.number}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {isLoading && (
-                        <div className="absolute right-3 top-3">
-                          <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                    if (pendingPlayers.length === 0 && presentPlayers.length > 0) {
+                      return (
+                        <div className="text-center text-green-600 font-medium mt-2">
+                          All present players have submitted! 🎉
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      );
+                    }
 
-                  {renderControl("rpe", rpe, setRpe)}
+                    if (pendingPlayers.length > 0) {
+                      return (
+                        <div className="mt-2 text-sm text-gray-600 text-center">
+                          <span className="font-medium text-gray-700">Pending: </span>
+                          {pendingPlayers.map(p => p.name).join(", ")}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              )}
 
-                  {renderControl("legs", legs, setLegs)}
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Notes (optional)</label>
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      rows={3}
-                      placeholder="Share anything about the session you'd like the staff to know."
+              <form onSubmit={handleSubmit}>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium mb-2">Select Player</label>
+                  <div className="relative">
+                    <select
+                      value={selectedPlayer}
+                      onChange={handlePlayerChange}
                       className="w-full p-2 border rounded"
-                    />
+                      required
+                      disabled={isLoading}
+                    >
+                      <option value="">{isLoading ? "Loading players..." : "Choose player..."}</option>
+                      {!isLoading && presentPlayers.map((player) => (
+                        <option key={player.id} value={player.name}>
+                          {player.name} {player.number ? `#${player.number}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {isLoading && (
+                      <div className="absolute right-3 top-3">
+                        <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    )}
                   </div>
+                </div>
 
-                  {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+                {renderControl("rpe", rpe, setRpe)}
 
-                  <button
-                    type="submit"
-                    className="survey-primary mt-4"
-                    disabled={!selectedPlayer || rpe === null || legs === null}
-                  >
-                    Submit
-                  </button>
-                </form>
-              </div>
+                {renderControl("legs", legs, setLegs)}
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Notes (optional)</label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Share anything about the session you'd like the staff to know."
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+
+                {error && <div className="text-red-500 text-sm mt-2">{error}</div>}
+
+                <button
+                  type="submit"
+                  className="survey-primary mt-4"
+                  disabled={!selectedPlayer || rpe === null || legs === null}
+                >
+                  Submit
+                </button>
+              </form>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      ) : (!isLoading && !dataError) ? (
+        <div className="text-center text-slate-500 mt-10">Please select a session above to begin survey.</div>
+      ) : null}
     </div>
   );
 }

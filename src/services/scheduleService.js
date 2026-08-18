@@ -26,10 +26,16 @@ export const scheduleService = {
     console.log('Fetching all schedule events...');
     try {
       const querySnapshot = await getDocs(collection(db, this.getSchedulePath(teamId)));
-      const events = querySnapshot.docs.map(doc => ({
-        ...doc.data(),
-        firebaseId: doc.id
-      }));
+      const events = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        const docId = doc.id;
+        return {
+          ...data,
+          id: data.id || docId,
+          firebaseId: docId,
+          date: data.date ? (typeof data.date === 'string' ? data.date.split('T')[0] : data.date) : ''
+        };
+      });
       console.log('Loaded events with IDs:', events.map(e => ({ id: e.id, firebaseId: e.firebaseId })));
       return events;
     } catch (error) {

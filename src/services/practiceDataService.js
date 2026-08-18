@@ -230,6 +230,36 @@ class PracticeDataService {
   };
 
   // Update gym RPE survey response for a player
+    // Update wellness survey response for a player
+  updateWellnessSurveyResponse = async (sessionId, playerName, surveyData) => {
+    if (!sessionId || !playerName) {
+      throw new Error('Session ID and player name are required');
+    }
+
+    try {
+      const docRef = doc(db, 'practices', sessionId);
+      
+      const sessionDoc = await getDoc(docRef);
+      // Ensure we have a base document structure
+      const currentData = sessionDoc.exists() ? sessionDoc.data() : { attendance: {}, metrics: {}, surveyData: {}, gymSurveyData: {}, wellnessData: {} };
+      
+      const newWellnessData = {
+        ...(currentData.wellnessData || {}),
+        [playerName]: surveyData
+      };
+
+      await setDoc(docRef, {
+        wellnessData: newWellnessData,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+
+      return true;
+    } catch (error) {
+      console.error('Error updating wellness survey response:', error);
+      throw error;
+    }
+  };
+
   updateGymSurveyResponse = async (sessionId, playerName, surveyData) => {
     if (!sessionId || !playerName) {
       throw new Error('Session ID and player name are required');

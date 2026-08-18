@@ -273,10 +273,24 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
     };
   }, [contextMenu]);
 
-  // Organize items into tree structure
+  const getIsArchived = (item) => {
+    if (item.isArchived) return true;
+    if (item.type !== 'folder') {
+      const dateStr = item.updatedAt || item.createdAt;
+      if (dateStr) {
+        const date = dateStr.seconds ? new Date(dateStr.seconds * 1000) : new Date(dateStr);
+        const diffTime = Math.abs(new Date() - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays > 30) return true;
+      }
+    }
+    return false;
+  };
+
   const organizeTree = () => {
     const filtered = items.filter(item => {
-      const matchesArchive = showArchived ? item.isArchived : !item.isArchived;
+      const itemArchived = getIsArchived(item);
+      const matchesArchive = showArchived ? itemArchived : !itemArchived;
       const matchesSearch = !searchQuery ||
         item.name?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesArchive && matchesSearch;
@@ -287,11 +301,12 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
   };
 
   const getChildItems = (parentId) => {
-    return items.filter(item =>
-      item.parentFolder === parentId &&
-      (showArchived ? item.isArchived : !item.isArchived) &&
-      (!searchQuery || item.name?.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    return items.filter(item => {
+      const itemArchived = getIsArchived(item);
+      return item.parentFolder === parentId &&
+        (showArchived ? itemArchived : !itemArchived) &&
+        (!searchQuery || item.name?.toLowerCase().includes(searchQuery.toLowerCase()));
+    });
   };
 
   const renderItem = (item, depth = 0) => {
@@ -306,11 +321,9 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
     return (
       <div key={item.firebaseId}>
         <div
-          className={`flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors ${
-            isActive ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-          } ${isDragging ? 'opacity-40' : ''} ${
-            isDropTarget ? 'bg-green-100 border-2 border-green-400 border-dashed' : ''
-          }`}
+          className={`flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors ${isActive ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+            } ${isDragging ? 'opacity-40' : ''} ${isDropTarget ? 'bg-green-100 border-2 border-green-400 border-dashed' : ''
+            }`}
           style={{ paddingLeft: `${depth * 20 + 12}px` }}
           draggable={!isFolder && !isEditing}
           onDragStart={(e) => handleDragStart(e, item)}
@@ -320,24 +333,15 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
           onDrop={(e) => handleDrop(e, item)}
           onContextMenu={(e) => handleContextMenu(e, item)}
           onClick={(e) => {
-            // Ignore right-clicks, ctrl+clicks, and meta+clicks
-            if (e.button !== 0 || e.ctrlKey || e.metaKey) {
-              return;
-            }
-
+            if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
             if (isFolder) {
               toggleFolder(item.firebaseId);
             } else {
-              onOpenPlan(item);
+              setPreviewPlan(item);
             }
           }}
         >
-          {isFolder && (
-            <span className="text-sm">
-              {isExpanded ? '📂' : '📁'}
-            </span>
-          )}
-
+          {isFolder && <span className="text-sm">{isExpanded ? '📂' : '📁'}</span>}
           {!isFolder && <span className="text-sm">📄</span>}
 
           {isEditing ? (
@@ -348,24 +352,18 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
               onChange={(e) => setEditingName(e.target.value)}
               onBlur={() => handleRename(item.firebaseId, editingName)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleRename(item.firebaseId, editingName);
-                } else if (e.key === 'Escape') {
-                  setEditingItem(null);
-                }
+                if (e.key === 'Enter') handleRename(item.firebaseId, editingName);
+                else if (e.key === 'Escape') setEditingItem(null);
               }}
               className="flex-1 px-2 py-1 border rounded"
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
             <div className="flex-1 flex justify-between items-center">
-              <span className="font-medium text-sm truncate">
-                {item.name || 'Untitled'}
-              </span>
+              <span className="font-medium text-sm truncate">{item.name || 'Untitled'}</span>
               {!isFolder && (
                 <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>{item.exercises?.length || 0} exercises</span>
-                  <span>{new Date(item.updatedAt).toLocaleDateString()}</span>
+                  <span>{item.exercises?.length || 0} exs</span>
                 </div>
               )}
             </div>
@@ -381,86 +379,162 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
     );
   };
 
+  const [previewPlan, setPreviewPlan] = useState(null);
+
   if (!isOpen) return null;
 
   return (
     <>
-      {/* Side Panel */}
-      <div className="fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-50 flex flex-col border-l">
-        {/* Header */}
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-          <h2 className="text-xl font-bold">Saved Plans</h2>
-          <button
-            onClick={onClose}
-            className="text-2xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center"
-          >
-            ×
-          </button>
-        </div>
+      <div className="last-plans-drawer flex flex-col h-[100vh] w-[50vw] fixed left-0 top-0 z-[100] bg-white shadow-2xl border-r">
 
-        {/* Controls */}
-        <div className="p-4 border-b space-y-3">
-          <input
-            type="text"
-            placeholder="Search plans..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg text-sm"
-          />
-
-          <div className="flex gap-2">
+        {/* TOP HALF = LIST DIRECTORY */}
+        <div className="plans-list-container h-[50%] flex flex-col bg-white border-b border-slate-200">
+          {/* Header */}
+          <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+            <h2 className="text-xl font-bold">Last Plans</h2>
             <button
-              onClick={() => setShowArchived(false)}
-              className={`flex-1 px-3 py-2 rounded text-sm ${
-                !showArchived ? 'bg-blue-500 text-white' : 'bg-gray-100'
-              }`}
+              onClick={onClose}
+              className="text-2xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center lg:hidden"
             >
-              Active
-            </button>
-            <button
-              onClick={() => setShowArchived(true)}
-              className={`flex-1 px-3 py-2 rounded text-sm ${
-                showArchived ? 'bg-blue-500 text-white' : 'bg-gray-100'
-              }`}
-            >
-              Archived
+              ×
             </button>
           </div>
 
-          <button
-            onClick={handleCreateFolder}
-            className="w-full px-3 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600"
-          >
-            + New Folder
-          </button>
+          {/* Controls */}
+          <div className="p-4 border-b space-y-3">
+            <input
+              type="text"
+              placeholder="Search plans..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowArchived(false)}
+                className={`flex-1 px-3 py-2 rounded text-sm ${!showArchived ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setShowArchived(true)}
+                className={`flex-1 px-3 py-2 rounded text-sm ${showArchived ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}
+              >
+                Archived
+              </button>
+            </div>
+
+            <button
+              onClick={handleCreateFolder}
+              className="w-full px-3 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600"
+            >
+              + New Folder
+            </button>
+          </div>
+
+          {/* Tree View */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-gray-500">Loading plans...</div>
+              </div>
+            ) : organizeTree().length === 0 ? (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No plans found
+              </div>
+            ) : (
+              <div>
+                {/* Root Drop Zone */}
+                {draggedItem && draggedItem.parentFolder && (
+                  <div
+                    className="mx-3 my-2 px-3 py-2 border-2 border-dashed border-gray-300 rounded bg-gray-50 hover:bg-gray-100 hover:border-blue-400 transition-colors text-center text-sm text-gray-600"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={handleDropOnRoot}
+                  >
+                    📂 Drop here to move to root
+                  </div>
+                )}
+                {organizeTree().map(item => renderItem(item))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Tree View */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-gray-500">Loading plans...</div>
-            </div>
-          ) : organizeTree().length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              No plans found
+        {/* BOTTOM HALF = PLAN PREVIEW */}
+        <div className="plan-preview-container h-[50%] flex flex-col bg-slate-50 relative overflow-hidden">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-2xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center z-10 hidden lg:flex"
+          >
+            ×
+          </button>
+          {previewPlan ? (
+            <div className="flex flex-col h-full overflow-y-auto relative">
+              {/* Header Preview */}
+              <div className="p-6 bg-white border-b shadow-sm shrink-0 sticky top-0 z-10 w-full lg:pr-14">
+                <h3 className="text-2xl font-bold mb-4 break-words text-gray-800">
+                  {previewPlan.name}
+                </h3>
+                <div className="flex flex-wrap gap-2 text-sm text-gray-500 mb-4">
+                  <span className="bg-gray-100 px-2 py-1 rounded">
+                    {previewPlan.exercises?.length || 0} Block Elements
+                  </span>
+                  <span className="bg-gray-100 px-2 py-1 rounded">
+                    {previewPlan.updatedAt
+                      ? new Date(previewPlan.updatedAt.seconds ? previewPlan.updatedAt.toDate() : previewPlan.updatedAt).toLocaleDateString()
+                      : new Date(previewPlan.createdAt).toLocaleDateString()
+                    }
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    onOpenPlan({ ...previewPlan, id: previewPlan.firebaseId || previewPlan.id });
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:shadow-md hover:bg-blue-700 border border-transparent transition-all text-sm w-full"
+                >
+                  ✏️ Open in Builder
+                </button>
+              </div>
+
+              {/* Preview Content */}
+              <div className="p-6 space-y-4">
+                {previewPlan.exercises?.map((exercise, index) => {
+                  if (exercise.type === 'break') {
+                    return (
+                      <div key={index} className="pt-4 border-b pb-2">
+                        <h4 className="text-lg font-bold text-gray-700">{exercise.title || 'Block'}</h4>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={index} className="bg-white rounded-lg p-4 shadow-sm border flex gap-4 items-center">
+                      {exercise.imageUrl && (
+                        <img src={exercise.imageUrl} alt={exercise.name} className="w-16 h-16 object-contain rounded-md bg-gray-50" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h5 className="font-semibold text-gray-800 truncate text-sm">{exercise.name || 'Unknown Exercise'}</h5>
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium text-gray-800">{exercise.sets || '-'}</span> sets × <span className="font-medium text-gray-800">{exercise.reps || '-'}</span> {exercise.repType || 'reps'}
+                        </p>
+                        {exercise.notes && <p className="text-xs text-gray-500 truncate mt-1 italic">{exercise.notes}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+                {!previewPlan.exercises?.length && (
+                  <div className="text-center text-gray-400 py-10">This plan has no content yet.</div>
+                )}
+              </div>
             </div>
           ) : (
-            <div>
-              {/* Root Drop Zone */}
-              {draggedItem && draggedItem.parentFolder && (
-                <div
-                  className="mx-3 my-2 px-3 py-2 border-2 border-dashed border-gray-300 rounded bg-gray-50 hover:bg-gray-100 hover:border-blue-400 transition-colors text-center text-sm text-gray-600"
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={handleDropOnRoot}
-                >
-                  📂 Drop here to move to root
-                </div>
-              )}
-              {organizeTree().map(item => renderItem(item))}
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center bg-gray-50">
+              <div className="text-6xl mb-4 opacity-50">📄</div>
+              <p>Select a plan from the list to preview</p>
             </div>
           )}
         </div>

@@ -83,10 +83,11 @@ const router = createBrowserRouter([
           </Suspense>
         )
       },
-      { path: "survey/:sessionId", element: <SurveyForm /> },
-      { path: "gym-survey/:sessionId", element: <GymSurvey /> },
+      { path: "surveys/court/:sessionId?", element: <SurveyForm /> },
+      { path: "surveys/gym/:sessionId?", element: <GymSurvey /> },
+      { path: "surveys/wellness/:sessionId?", element: <WellnessForm /> },
       {
-        path: "combined-survey/:sessionId",
+        path: "surveys/combined/:sessionId?",
         element: (
           <Suspense fallback={<div>Loading...</div>}>
             <CombinedSurvey />

@@ -308,7 +308,7 @@ const GymPage = () => {
   const createNewPlan = async () => {
     const newPlan = {
       id: crypto.randomUUID(),
-      name: 'New Workout Plan',
+      name: new Date().toLocaleDateString('en-GB'),
       exercises: [],
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -347,7 +347,7 @@ const GymPage = () => {
   const createNewIndividualPlan = async () => {
     const newPlan = {
       id: crypto.randomUUID(),
-      name: 'New Individual Plan',
+      name: new Date().toLocaleDateString('en-GB'),
       type: 'individual',
       players: [],
       createdAt: new Date(),
@@ -702,35 +702,27 @@ const GymPage = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 pt-4 pb-12">
-      <div className="container mx-auto px-4 py-4">
-        <div
-          className="border-2 border-dashed border-slate-300 bg-white shadow-sm rounded-xl p-8 mb-8 text-center transition-colors hover:border-slate-400"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleImageDrop}
-        >
-          <p className="text-gray-500">
-            Drag and drop images here to create new exercises
-          </p>
-        </div>
+    <div className="flex flex-col h-full w-full bg-slate-50 overflow-hidden">
+      <div className="container mx-auto px-4 py-4 flex flex-col h-full gap-4">
 
-        <div className="flex justify-between items-center mb-6">
+        {/* Action Bar (Pinned) */}
+        <div className="flex justify-between items-center shrink-0">
           <div className="flex-1 max-w-xl">
             <input
               type="text"
               placeholder="Search exercises..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              className="w-full px-4 py-2 rounded-xl border border-slate-300 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-sm"
             />
           </div>
 
-          <div className="flex items-center gap-4 ml-4">
+          <div className="flex items-center gap-3 ml-4">
             <button
               onClick={() => setShowSavedPlansPanel(true)}
               className="px-4 py-2 rounded-xl bg-white border border-slate-300 shadow-sm hover:shadow-md hover:bg-slate-50 text-slate-700 text-sm font-medium transition-all"
             >
-              📋 Saved Plans
+              📋 Last Plans
             </button>
             <button
               onClick={() => setIsEditMode(!isEditMode)}
@@ -754,6 +746,15 @@ const GymPage = () => {
               + Individual
             </button>
             <button
+              onClick={() => {
+                setUploadedImages([]);
+                setShowUploadModal(true);
+              }}
+              className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-xl shadow-sm hover:shadow-md hover:bg-emerald-700 border border-transparent transition-all text-sm"
+            >
+              + Upload Exercises
+            </button>
+            <button
               onClick={() => setShowSettings(true)}
               className="w-10 h-10 flex items-center justify-center bg-white border border-slate-300 shadow-sm hover:shadow-md hover:bg-slate-50 text-slate-700 rounded-xl transition-all"
             >
@@ -762,7 +763,27 @@ const GymPage = () => {
           </div>
         </div>
 
-        <div className="space-y-8 bg-slate-800 p-6 md:p-8 rounded-3xl shadow-inner border border-slate-700">
+        {/* Categories Quick-Jump Bar (Pinned) */}
+        <div className="flex gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-hide items-center">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-widest mr-2 shrink-0">Jump To:</span>
+          {Array.isArray(muscleGroups) && muscleGroups
+            .filter(validateMuscleGroup)
+            .filter(g => visibleGroups.includes(g.name))
+            .map(group => (
+              <button
+                key={group.name}
+                onClick={() => {
+                  document.getElementById(`category-section-${group.name}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="px-3 py-1.5 whitespace-nowrap bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg text-xs font-bold transition-colors shrink-0"
+              >
+                {group.name}
+              </button>
+            ))}
+        </div>
+
+        {/* Library Container (Scrollable) */}
+        <div className="flex-1 overflow-y-auto bg-slate-800 p-4 md:p-6 rounded-2xl shadow-inner border border-slate-700 custom-scrollbar space-y-6">
           {Array.isArray(muscleGroups) && muscleGroups
             .filter(validateMuscleGroup)
             .map((group) => {
@@ -776,15 +797,15 @@ const GymPage = () => {
               if (!groupExercises.length) return null;
 
               return (
-                <div key={group.name} className="relative z-10">
-                  <h3 className="text-xl font-bold mb-4 text-white tracking-wide">
+                <div id={`category-section-${group.name}`} key={group.name} className="relative z-10 scroll-mt-4">
+                  <h3 className="text-lg font-bold mb-3 text-white tracking-wide border-b border-slate-700 pb-2">
                     {group.name}
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
                     {groupExercises.map((exercise, index) => (
                       <div
                         key={exercise.id}
-                        className={`relative cursor-pointer transition-all duration-200 bg-slate-800 rounded-xl overflow-hidden border border-slate-700 shadow-md hover:shadow-xl flex flex-col p-3 w-full ${isEditMode && dragTargetIndex === index ? 'border-2 border-blue-500' : ''
+                        className={`relative cursor-pointer transition-all duration-200 bg-slate-800 rounded-lg overflow-hidden border border-slate-600 shadow-sm hover:shadow-md hover:-translate-y-0.5 flex flex-col p-2 w-full ${isEditMode && dragTargetIndex === index ? 'border-2 border-blue-500' : ''
                           }`}
                         onClick={() => !isEditMode && handleExerciseClick(exercise)}
                         draggable={isEditMode}
@@ -801,7 +822,7 @@ const GymPage = () => {
                                 e.stopPropagation();
                                 handleDeleteExercise(exercise.id);
                               }}
-                              className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-20 shadow-md"
+                              className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 z-20 shadow-md text-xs"
                             >
                               ×
                             </button>
@@ -810,7 +831,7 @@ const GymPage = () => {
                                 e.stopPropagation();
                                 setEditingExercise(exercise);
                               }}
-                              className="absolute top-2 left-2 w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 z-20 shadow-md"
+                              className="absolute top-1 left-1 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center hover:bg-blue-600 z-20 shadow-md text-xs"
                             >
                               ✎
                             </button>
@@ -818,7 +839,7 @@ const GymPage = () => {
                         )}
 
                         {/* Square Image Container - Maximizes space and keeps aspect ratio 1:1 */}
-                        <div className="w-full aspect-square bg-white rounded-lg overflow-hidden flex items-center justify-center p-2">
+                        <div className="w-full aspect-square bg-white rounded-md overflow-hidden flex items-center justify-center p-1.5">
                           <img
                             src={exercise.imageUrl}
                             alt={exercise.name}
@@ -827,7 +848,7 @@ const GymPage = () => {
                         </div>
 
                         {/* Title */}
-                        <div className="pt-3 pb-1 px-1 text-center font-bold text-white text-base truncate">
+                        <div className="pt-2 pb-0.5 px-0.5 text-center font-bold text-white text-[12.5px] leading-tight truncate">
                           {exercise.name}
                         </div>
                       </div>
@@ -847,9 +868,10 @@ const GymPage = () => {
               setCurrentImageIndex(0);
             }}
             images={uploadedImages}
-            muscleGroups={muscleGroups.map(g => g.name)}  // Pass only names array
+            muscleGroups={muscleGroups.map(g => g.name)}
             onSaveExercise={handleSaveExercise}
             currentIndex={currentImageIndex}
+            onImageDrop={handleImageDrop}
           />
         )}
 

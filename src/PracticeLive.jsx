@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
+import { useTeam } from "./context/TeamContext";
 import './styles.css';
 import { rosterService } from './services/rosterService';
 import {
@@ -315,6 +316,7 @@ const PRACTICE_DATA_KEY = "practiceData_";
 
 function PracticeLive({ sessionId: sessionIdProp }) {
   const params = useParams();
+  const { activeTeam } = useTeam();
   const sessionIdParam = params?.sessionId ?? "";
   const sessionId = sessionIdProp ?? sessionIdParam;
   const numericSessionId = Number(sessionId);
@@ -934,7 +936,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         `surveyPlayers_${session.id}`,
         JSON.stringify(presentPlayers)
       );
-      navigate(`/survey/${session.id}`);
+      navigate(`/team/${activeTeam?.id}/surveys/court/${session.id}`);
     } catch (err) {
       console.error('Failed to prepare survey:', err);
     }
@@ -968,7 +970,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
         `gymSurveyPlayers_${session.id}`,
         JSON.stringify(presentPlayers)
       );
-      navigate(`/gym-survey/${session.id}`);
+      navigate(`/team/${activeTeam?.id}/surveys/gym/${session.id}`);
     } catch (err) {
       console.error('Failed to prepare gym survey:', err);
     }
@@ -1003,7 +1005,7 @@ function PracticeLive({ sessionId: sessionIdProp }) {
     } else if (type === 'gym') {
       handleOpenGymSurvey();
     } else if (type === 'combined') {
-      navigate(`/combined-survey/${session.id}`);
+      navigate(`/team/${activeTeam?.id}/surveys/combined/${session.id}`);
     }
   };
 

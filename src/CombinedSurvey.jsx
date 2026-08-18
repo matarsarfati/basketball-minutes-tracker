@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { practiceDataService } from './services/practiceDataService';
 import { rosterService } from './services/rosterService';
+import { useTeam } from './context/TeamContext';
+import { scheduleService } from './services/scheduleService';
 import "./SurveyForm.css";
 
 // --- Shared Constants & Helpers ---
@@ -89,6 +91,7 @@ const QUESTION_LABELS = {
 export default function CombinedSurvey() {
     const { sessionId } = useParams();
     const navigate = useNavigate();
+    const { activeTeam } = useTeam();
 
     // State
     const [presentPlayers, setPresentPlayers] = useState([]);
@@ -108,6 +111,30 @@ export default function CombinedSurvey() {
     const [error, setError] = useState("");
     const [showSuccess, setShowSuccess] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
+
+    useEffect(() => {
+        if (sessionId) return;
+        if (!activeTeam?.id) return;
+
+        const getTodaySession = async () => {
+            const today = new Date().toISOString().split('T')[0];
+            try {
+                const events = await scheduleService.getScheduleEvents(activeTeam.id);
+                const todaySession = events.find(e => e.date === today && e.type !== 'DayOff');
+                if (todaySession) {
+                    navigate(`/team/${activeTeam.id}/combined-survey/${todaySession.id || todaySession.firebaseId}`, { replace: true });
+                } else {
+                    setDataError("No active session today to survey.");
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                console.error("Failed to find session:", error);
+                setDataError("Failed to fetch session schedules.");
+                setIsLoading(false);
+            }
+        };
+        getTodaySession();
+    }, [sessionId, activeTeam, navigate]);
 
     // Load Data
     useEffect(() => {
