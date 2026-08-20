@@ -702,8 +702,8 @@ const GymPage = () => {
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-slate-50 overflow-hidden">
-      <div className="container mx-auto px-4 py-4 flex flex-col h-full gap-4">
+    <div className="flex flex-col h-screen w-full bg-slate-50 overflow-hidden">
+      <div className="px-4 py-4 flex flex-col h-full min-h-0 gap-4">
 
         {/* Action Bar (Pinned) */}
         <div className="flex justify-between items-center shrink-0">
@@ -782,8 +782,8 @@ const GymPage = () => {
             ))}
         </div>
 
-        {/* Library Container (Scrollable) */}
-        <div className="flex-1 overflow-y-auto bg-slate-800 p-4 md:p-6 rounded-2xl shadow-inner border border-slate-700 custom-scrollbar space-y-6">
+        {/* Library Container (Scrollable) — ONLY this element scrolls */}
+        <div className="flex-1 min-h-0 overflow-y-auto bg-slate-800 p-4 md:p-6 rounded-2xl shadow-inner border border-slate-700 custom-scrollbar space-y-6">
           {Array.isArray(muscleGroups) && muscleGroups
             .filter(validateMuscleGroup)
             .map((group) => {
