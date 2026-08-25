@@ -26,6 +26,7 @@ const PracticeLive = lazy(() => import('./PracticeLive'));
 const MeetingProtocol = lazy(() => import('./MeetingProtocol'));
 const CombinedSurvey = lazy(() => import('./CombinedSurvey'));
 const TestsAndAssessments = lazy(() => import('./screens/TestsAndAssessments'));
+const SurveysSummary = lazy(() => import('./screens/SurveysSummary'));
 
 const legacyRoutes = ['dashboard', 'roster', 'minutes', 'schedule', 'tests', 'wellness', 'wellness/survey', 'rpe-report', 'gym'].map(path => ({
   path: `/${path}`,
@@ -91,6 +92,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<div>Loading...</div>}>
             <CombinedSurvey />
+          </Suspense>
+        )
+      },
+      {
+        path: "surveys/summary/:sessionId?",
+        element: (
+          <Suspense fallback={<div>Loading...</div>}>
+            <SurveysSummary />
           </Suspense>
         )
       }

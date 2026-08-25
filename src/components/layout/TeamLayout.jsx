@@ -45,6 +45,7 @@ export default function TeamLayout() {
                 { name: 'Court Survey', path: `/team/${teamId}/surveys/court` },
                 { name: 'Gym Survey', path: `/team/${teamId}/surveys/gym` },
                 { name: 'Wellness Survey', path: `/team/${teamId}/surveys/wellness` },
+                { name: 'Daily Summary', path: `/team/${teamId}/surveys/summary` },
             ]
         }
     ];
