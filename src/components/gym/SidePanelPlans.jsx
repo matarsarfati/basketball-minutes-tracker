@@ -6,10 +6,11 @@ import {
   renamePlanOrFolder,
   duplicatePlan,
   toggleArchivePlan,
-  deletePlanFromFirestore
+  deletePlanFromFirestore,
+  getFoldersWithSystem
 } from '../../services/planService';
 
-const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
+const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId, refreshToken }) => {
   const [items, setItems] = useState([]); // All plans and folders
   const [searchQuery, setSearchQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -30,7 +31,7 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
     if (isOpen) {
       loadItems();
     }
-  }, [isOpen]);
+  }, [isOpen, refreshToken]); // reload when parent signals a save
 
   useEffect(() => {
     if (editingItem && editInputRef.current) {
@@ -43,7 +44,8 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
     try {
       setLoading(true);
       const allItems = await loadPlansFromFirestore();
-      setItems(allItems);
+      // Merge with system folders (Individual is always present)
+      setItems(getFoldersWithSystem(allItems));
     } catch (error) {
       console.error('Failed to load plans:', error);
     } finally {
@@ -297,12 +299,37 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
       return matchesArchive && matchesSearch;
     });
 
-    const rootItems = filtered.filter(item => !item.parentFolder);
+    // Root items: system folders first, then real root folders, excluding individual plans
+    // (individual plans are shown under the __individual__ virtual folder)
+    const rootItems = filtered.filter(item => {
+      if (item.isSystem) return true; // Always show system folders at root
+      if (item.parentFolder) return false; // Non-root items belong to a folder
+      // Hide individual plans from root — they live under the virtual Individual folder
+      if (item.type === 'individual' || item.folder === 'Individual') return false;
+      return true;
+    });
     return rootItems;
   };
 
+  /**
+   * Get child items for a folder.
+   * For the virtual '__individual__' system folder, returns all individual-type plans
+   * (matched by type:'individual' OR folder:'Individual') regardless of parentFolder.
+   */
   const getChildItems = (parentId) => {
+    if (parentId === '__individual__') {
+      // Virtual folder: collect all individual plans from items
+      return items.filter(item => {
+        if (item.type === 'folder' || item.isSystem) return false;
+        const isIndividual = item.type === 'individual' || item.folder === 'Individual';
+        if (!isIndividual) return false;
+        const itemArchived = getIsArchived(item);
+        return (showArchived ? itemArchived : !itemArchived) &&
+          (!searchQuery || item.name?.toLowerCase().includes(searchQuery.toLowerCase()));
+      });
+    }
     return items.filter(item => {
+      if (item.isSystem) return false;
       const itemArchived = getIsArchived(item);
       return item.parentFolder === parentId &&
         (showArchived ? itemArchived : !itemArchived) &&

@@ -71,6 +71,7 @@ const GymPage = () => {
   // Click-to-add: when an exercise is clicked in the library, if an individual plan is active
   // it gets routed as pendingExercise to IndividualPlanBuilderModal
   const [pendingExercise, setPendingExercise] = useState(null);
+  const [planRefreshToken, setPlanRefreshToken] = useState(0);
   const { activeTeamId } = useTeam();
 
   // Add safety check helper
@@ -603,6 +604,9 @@ const GymPage = () => {
       const updatedPlan = { ...plan, firebaseId: firebaseId || plan.firebaseId, updatedAt: new Date() };
       setPlans(prev => prev.map(p => p.id === planId ? updatedPlan : p));
 
+      // Signal SidePanelPlans to reload its list
+      setPlanRefreshToken(t => t + 1);
+
       console.log('✅ Plan saved successfully to Firestore');
     } catch (error) {
       console.error('❌ Failed to save plan to Firestore:', error);
@@ -1016,6 +1020,7 @@ const GymPage = () => {
           onClose={() => setShowSavedPlansPanel(false)}
           onOpenPlan={handleOpenPlanFromSidebar}
           activePlanId={activePlanId}
+          refreshToken={planRefreshToken}
         />
       </div>
     </div>

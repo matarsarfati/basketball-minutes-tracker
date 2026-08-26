@@ -66,54 +66,78 @@ export const savePlanToFirestore = async (plan) => {
 };
 
 /**
- * Ensures an "Individual" folder exists in Firestore.
+ * System folders that always appear in the UI — no Firestore document needed.
+ */
+export const SYSTEM_FOLDERS = [
+  { firebaseId: '__individual__', name: 'Individual', type: 'folder', isSystem: true, parentFolder: null },
+];
+
+/**
+ * Merges Firestore folders with system default folders.
+ * Prevents duplicates if a real 'Individual' Firestore folder already exists.
+ */
+export const getFoldersWithSystem = (firestoreItems = []) => {
+  const hasReal = firestoreItems.some(
+    f => f.type === 'folder' && f.name?.toLowerCase() === 'individual'
+  );
+  return hasReal
+    ? firestoreItems
+    : [...SYSTEM_FOLDERS, ...firestoreItems];
+};
+
+/**
+ * Ensures an "Individual" folder exists in Firestore (used only when we need a real parentFolder ref).
  * Returns its firebaseId (creates it if absent).
+ * NOTE: For virtual system folder usage, prefer getFoldersWithSystem() instead.
  */
 export const ensureIndividualFolder = async () => {
   const plansRef = collection(db, 'plans');
   const { where } = await import('firebase/firestore');
   const q = query(plansRef, where('type', '==', 'folder'), where('name', '==', 'Individual'));
   const snapshot = await getDocs(q);
-  if (!snapshot.empty) {
-    return snapshot.docs[0].id;
-  }
-  // Create folder
-  const folderData = {
+  if (!snapshot.empty) return snapshot.docs[0].id;
+
+  const docRef = await addDoc(collection(db, 'plans'), {
     name: 'Individual',
     type: 'folder',
     parentFolder: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
-  };
-  const docRef = await addDoc(collection(db, 'plans'), folderData);
+  });
   return docRef.id;
 };
 
 /**
- * Saves an individual workout plan, auto-assigning it to the "Individual" folder.
+ * Saves an individual workout plan to Firestore.
+ * Sets type:'individual', folder:'Individual', and parentFolder if available.
  */
 export const saveIndividualPlanToFirestore = async (plan) => {
-  let parentFolder = plan.parentFolder;
-  if (!parentFolder) {
-    try {
-      parentFolder = await ensureIndividualFolder();
-    } catch (e) {
-      console.warn('Could not ensure Individual folder:', e);
-    }
-  }
+  // Strip local-only React state fields
+  const { id, ...rest } = plan;
 
   const planData = {
-    ...plan,
+    ...rest,
+    name: plan.name || `Individual - ${new Date().toLocaleDateString('en-GB')}`,
     type: 'individual',
-    parentFolder: parentFolder || null,
+    folder: 'Individual',
     updatedAt: new Date().toISOString(),
-    createdAt: plan.createdAt || new Date().toISOString(),
+    createdAt: plan.createdAt instanceof Date
+      ? plan.createdAt.toISOString()
+      : plan.createdAt || new Date().toISOString(),
     isArchived: plan.isArchived || false,
     groupId: plan.groupId || null,
+    players: plan.players ?? [],
   };
 
-  // Remove local-only fields
-  delete planData.id;
+  // Ensure parentFolder is a real Firestore document (lazy-create if missing)
+  if (!planData.parentFolder) {
+    try {
+      planData.parentFolder = await ensureIndividualFolder();
+    } catch (e) {
+      console.warn('Could not ensure Individual Firestore folder (virtual folder will be used):', e);
+      delete planData.parentFolder;
+    }
+  }
 
   if (plan.firebaseId) {
     const docRef = doc(db, 'plans', plan.firebaseId);
