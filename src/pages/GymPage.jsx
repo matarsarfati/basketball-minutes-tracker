@@ -620,20 +620,30 @@ const GymPage = () => {
   };
 
 
-  const handleDeletePlan = (planId) => {
-    if (window.confirm('Delete this plan? This action cannot be undone.')) {
-      setPlans(prev => prev.filter(p => p.id !== planId));
-      setMinimizedPlans(prev => prev.filter(id => id !== planId));
-      setOpenPlanIds(prev => prev.filter(id => id !== planId));
-      if (currentPlanId === planId) {
-        setCurrentPlanId(null);
+  // Close modal — does NOT delete the plan, just hides it
+  const closePlanModal = (planId) => {
+    setOpenPlanIds(prev => prev.filter(id => id !== planId));
+    if (currentPlanId === planId) setCurrentPlanId(null);
+  };
+
+  // Permanent delete with Firestore removal
+  const deletePlanPermanently = async (planId) => {
+    const plan = plans.find(p => p.id === planId);
+    if (!plan) return;
+    if (!window.confirm(`Permanently delete "${plan.name}"? This cannot be undone.`)) return;
+
+    setPlans(prev => prev.filter(p => p.id !== planId));
+    setOpenPlanIds(prev => prev.filter(id => id !== planId));
+    setMinimizedPlans(prev => prev.filter(id => id !== planId));
+    if (currentPlanId === planId) setCurrentPlanId(null);
+
+    if (plan.firebaseId) {
+      try {
+        const { deletePlanFromFirestore } = await import('../services/planService');
+        await deletePlanFromFirestore(plan.firebaseId);
+      } catch (e) {
+        console.error('Failed to delete plan from Firestore:', e);
       }
-      // Also delete from Firestore if needed, planService handles this? 
-      // The original code only updated local state here (and maybe depended on auto-save? No, deletePlanFromFirestore exists)
-      // Original code just modified state. I should probably ensure it's deleted from DB too if I want consistency.
-      // But adhering to original style for now unless specifically asked to fix bugs.
-      // Actually, let's call the service
-      import('../services/planService').then(mod => mod.deletePlanFromFirestore(planId));
     }
   };
 
@@ -947,7 +957,8 @@ const GymPage = () => {
               <IndividualPlanBuilderModal
                 key={planId}
                 isOpen={true}
-                onClose={() => handleDeletePlan(planId)}
+                onClose={() => closePlanModal(planId)}
+                onDelete={() => deletePlanPermanently(planId)}
                 plan={plan}
                 onUpdatePlan={(updated) => updateFullPlan(planId, updated)}
                 onMinimize={() => minimizePlan(planId)}
@@ -969,7 +980,8 @@ const GymPage = () => {
             <PlanBuilderModal
               key={planId}
               isOpen={true}
-              onClose={() => handleDeletePlan(planId)}  // Changed from onDelete to onClose
+              onClose={() => closePlanModal(planId)}
+              onDelete={() => deletePlanPermanently(planId)}
               onMinimize={() => minimizePlan(planId)}
               plan={plan.exercises || []}
               onUpdatePlan={(exercises) => updatePlan(planId, exercises)}

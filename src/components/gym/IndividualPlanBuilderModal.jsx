@@ -13,6 +13,7 @@ const IndividualPlanBuilderModal = ({
     exercises,
     onMinimize,
     onSave,
+    onDelete,
     isActive,
     onActivate,
     planName,
@@ -213,7 +214,14 @@ const IndividualPlanBuilderModal = ({
                                 + Add Player
                             </button>
                             <button onClick={onSave} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 font-medium text-sm">
-                                Save
+                                💾 Save
+                            </button>
+                            <button
+                                onClick={onDelete}
+                                className="px-2 py-1 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                title="Permanently delete this plan"
+                            >
+                                🗑
                             </button>
                         </>
                     )}

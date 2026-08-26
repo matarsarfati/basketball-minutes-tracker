@@ -22,6 +22,7 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
   const [itemToMove, setItemToMove] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [listEditMode, setListEditMode] = useState(false);
   const editInputRef = useRef(null);
   const contextMenuRef = useRef(null);
 
@@ -359,13 +360,25 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <div className="flex-1 flex justify-between items-center">
+            <div className="flex-1 flex justify-between items-center min-w-0">
               <span className="font-medium text-sm truncate">{item.name || 'Untitled'}</span>
-              {!isFolder && (
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>{item.exercises?.length || 0} exs</span>
-                </div>
-              )}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {!isFolder && (
+                  <span className="text-xs text-gray-400">{item.exercises?.length || 0} exs</span>
+                )}
+                {listEditMode && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(item.firebaseId, isFolder);
+                    }}
+                    className="ml-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded w-5 h-5 flex items-center justify-center transition-colors"
+                    title="Delete permanently"
+                  >
+                    🗑
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -392,12 +405,22 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
           {/* Header */}
           <div className="p-4 border-b flex justify-between items-center bg-gray-50">
             <h2 className="text-xl font-bold">Last Plans</h2>
-            <button
-              onClick={onClose}
-              className="text-2xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center lg:hidden"
-            >
-              ×
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setListEditMode(m => !m)}
+                className={`text-xs px-2 py-1 rounded font-medium transition-colors ${listEditMode ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                  }`}
+              >
+                {listEditMode ? '✓ Done' : '✏ Edit'}
+              </button>
+              <button
+                onClick={onClose}
+                className="text-xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center"
+                title="Close Last Plans"
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {/* Controls */}
@@ -468,7 +491,8 @@ const SidePanelPlans = ({ isOpen, onClose, onOpenPlan, activePlanId }) => {
         <div className="plan-preview-container h-[50%] flex flex-col bg-slate-50 relative overflow-hidden">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-2xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center z-10 hidden lg:flex"
+            className="absolute top-4 right-4 text-xl hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center z-10"
+            title="Close Last Plans"
           >
             ×
           </button>

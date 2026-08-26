@@ -59,12 +59,13 @@ const PlanBuilderModal = ({
   onDuplicate,
   onMinimize,
   onSave,
+  onDelete,
   isActive,
   onActivate,
   onRenamePlan,
-  defaultTVMode, // New prop
-  planId, // New prop
-  firebaseId // New prop (to check saved status)
+  defaultTVMode,
+  planId,
+  firebaseId
 }) => {
   const [position, setPosition] = useState(
     initialPosition || { x: window.innerWidth - 520, y: 20 }
@@ -466,7 +467,13 @@ const PlanBuilderModal = ({
 
               {!isTVMode && (
                 <>
-                  {/* Add Section Button - Restored Feature */}
+                  <button
+                    onClick={onSave}
+                    className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-semibold shadow-sm"
+                    title="Save plan to Firestore"
+                  >
+                    💾 Save
+                  </button>
                   <button
                     onClick={addRowBreak}
                     className="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded text-sm font-medium"
@@ -493,7 +500,7 @@ const PlanBuilderModal = ({
                     onClick={handleClearPlan}
                     className="text-sm px-2 py-1 text-gray-600 hover:text-red-600"
                   >
-                    Clear Plan
+                    Clear
                   </button>
                   <div className={`text-sm px-2 py-1 rounded ${isEditMode ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'}`}>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -506,16 +513,19 @@ const PlanBuilderModal = ({
                       {isEditMode ? '✏️ Edit Mode' : '👀 View Mode'}
                     </label>
                   </div>
+                  {/* Delete Plan — explicit destructive action */}
                   <button
-                    onClick={() => {
-                      if (plan.length > 0) {
-                        onUpdatePlan(plan);
-                      }
-                      if (typeof onClose === 'function') {
-                        onClose();
-                      }
-                    }}
+                    onClick={onDelete}
+                    className="px-2 py-1 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                    title="Permanently delete this plan"
+                  >
+                    🗑
+                  </button>
+                  {/* X = close only, no delete */}
+                  <button
+                    onClick={onClose}
                     className="icon-button"
+                    title="Close (plan is saved)"
                   >
                     ×
                   </button>
