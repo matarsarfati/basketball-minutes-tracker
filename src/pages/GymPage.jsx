@@ -4,7 +4,7 @@ import PlanBuilderModal from '../components/gym/PlanBuilderModal';
 import IndividualPlanBuilderModal from '../components/gym/IndividualPlanBuilderModal';
 import ExerciseLibrarySettings from '../components/gym/ExerciseLibrarySettings';
 import SidePanelPlans from '../components/gym/SidePanelPlans';
-import { savePlans, savePlanToFirestore } from '../services/planService';
+import { savePlans, savePlanToFirestore, saveIndividualPlanToFirestore } from '../services/planService';
 import {
   uploadExerciseImage,
   fetchMuscleGroups,    // Add this
@@ -68,6 +68,9 @@ const GymPage = () => {
   const [dragTargetIndex, setDragTargetIndex] = useState(null); // Add new state for tracking drag target index
   const [editingExercise, setEditingExercise] = useState(null);
   const [showSavedPlansPanel, setShowSavedPlansPanel] = useState(false);
+  // Click-to-add: when an exercise is clicked in the library, if an individual plan is active
+  // it gets routed as pendingExercise to IndividualPlanBuilderModal
+  const [pendingExercise, setPendingExercise] = useState(null);
   const { activeTeamId } = useTeam();
 
   // Add safety check helper
@@ -355,26 +358,17 @@ const GymPage = () => {
       groupId: activeTeamId || null
     };
 
-    const initialPosition = {
-      x: window.innerWidth - 800,
-      y: 20
-    };
-
-    const initialSize = {
-      width: 900,
-      height: 600
-    };
-
     try {
-      const firebaseId = await savePlanToFirestore(newPlan);
+      // Use saveIndividualPlanToFirestore to auto-assign to 'Individual' folder
+      const firebaseId = await saveIndividualPlanToFirestore(newPlan);
       newPlan.firebaseId = firebaseId;
     } catch (error) {
-      console.error('Failed to save new plan:', error);
+      console.error('Failed to save new individual plan:', error);
     }
 
     setPlans(prev => [...prev, newPlan]);
     setOpenPlanIds(prev => [...prev, newPlan.id]);
-    setPlanPositions(prev => ({ ...prev, [newPlan.id]: { ...initialPosition, ...initialSize } }));
+    setPlanPositions(prev => ({ ...prev, [newPlan.id]: { x: window.innerWidth - 960, y: 20 } }));
     setCurrentPlanId(newPlan.id);
     setActivePlanId(newPlan.id);
   };
@@ -562,12 +556,18 @@ const GymPage = () => {
   };
 
   const handleExerciseClick = (exercise) => {
+    // If the currently active plan is an individual plan, route to pendingExercise
+    const currentPlan = plans.find(p => p.id === currentPlanId);
+    if (currentPlan?.type === 'individual') {
+      setPendingExercise({ ...exercise });
+      return;
+    }
+
     if (!currentPlanId) {
       setShowMessage(true);
       return;
     }
 
-    const currentPlan = plans.find(p => p.id === currentPlanId);
     if (!currentPlan) return;
 
     const exerciseCopy = {
@@ -592,26 +592,16 @@ const GymPage = () => {
   const savePlan = async (planId) => {
     try {
       const plan = plans.find(p => p.id === planId);
-      if (!plan) {
-        console.error('Plan not found:', planId);
-        return;
-      }
+      if (!plan) { console.error('Plan not found:', planId); return; }
 
       console.log('💾 Saving plan to Firestore:', plan.name);
 
-      // Save to Firestore
-      const firebaseId = await savePlanToFirestore(plan);
+      // Route individual plans to saveIndividualPlanToFirestore for auto-folder assignment
+      const saveFunc = plan.type === 'individual' ? saveIndividualPlanToFirestore : savePlanToFirestore;
+      const firebaseId = await saveFunc(plan);
 
-      // Update local state with the Firebase ID and updated timestamp
-      const updatedPlan = {
-        ...plan,
-        firebaseId: firebaseId || plan.firebaseId,
-        updatedAt: new Date()
-      };
-
-      setPlans(prev =>
-        prev.map(p => p.id === planId ? updatedPlan : p)
-      );
+      const updatedPlan = { ...plan, firebaseId: firebaseId || plan.firebaseId, updatedAt: new Date() };
+      setPlans(prev => prev.map(p => p.id === planId ? updatedPlan : p));
 
       console.log('✅ Plan saved successfully to Firestore');
     } catch (error) {
@@ -966,9 +956,11 @@ const GymPage = () => {
                 onActivate={() => setActiveWorkoutPlan(planId)}
                 planName={plan.name}
                 onRenamePlan={(newName) => renamePlan(planId, newName)}
-                draggedExercise={draggedExercise} // Pass dragged exercise for dropping
+                draggedExercise={draggedExercise}
                 exercises={customExercises}
                 defaultTVMode={urlTvMode && plan.id === urlPlanId}
+                pendingExercise={activePlanId === planId ? pendingExercise : null}
+                onPendingExerciseConsumed={() => setPendingExercise(null)}
               />
             );
           }

@@ -51,9 +51,69 @@ export const savePlanToFirestore = async (plan) => {
     updatedAt: new Date().toISOString(),
     createdAt: plan.createdAt || new Date().toISOString(),
     isArchived: plan.isArchived || false,
-    groupId: plan.groupId || null, // Ensure groupId is saved
-    programUrl: plan.programUrl || '' // Save program URL
+    groupId: plan.groupId || null,
+    programUrl: plan.programUrl || ''
   };
+
+  if (plan.firebaseId) {
+    const docRef = doc(db, 'plans', plan.firebaseId);
+    await updateDoc(docRef, planData);
+    return plan.firebaseId;
+  }
+
+  const docRef = await addDoc(collection(db, 'plans'), planData);
+  return docRef.id;
+};
+
+/**
+ * Ensures an "Individual" folder exists in Firestore.
+ * Returns its firebaseId (creates it if absent).
+ */
+export const ensureIndividualFolder = async () => {
+  const plansRef = collection(db, 'plans');
+  const { where } = await import('firebase/firestore');
+  const q = query(plansRef, where('type', '==', 'folder'), where('name', '==', 'Individual'));
+  const snapshot = await getDocs(q);
+  if (!snapshot.empty) {
+    return snapshot.docs[0].id;
+  }
+  // Create folder
+  const folderData = {
+    name: 'Individual',
+    type: 'folder',
+    parentFolder: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const docRef = await addDoc(collection(db, 'plans'), folderData);
+  return docRef.id;
+};
+
+/**
+ * Saves an individual workout plan, auto-assigning it to the "Individual" folder.
+ */
+export const saveIndividualPlanToFirestore = async (plan) => {
+  let parentFolder = plan.parentFolder;
+  if (!parentFolder) {
+    try {
+      parentFolder = await ensureIndividualFolder();
+    } catch (e) {
+      console.warn('Could not ensure Individual folder:', e);
+    }
+  }
+
+  const planData = {
+    ...plan,
+    type: 'individual',
+    parentFolder: parentFolder || null,
+    updatedAt: new Date().toISOString(),
+    createdAt: plan.createdAt || new Date().toISOString(),
+    isArchived: plan.isArchived || false,
+    groupId: plan.groupId || null,
+  };
+
+  // Remove local-only fields
+  delete planData.id;
 
   if (plan.firebaseId) {
     const docRef = doc(db, 'plans', plan.firebaseId);
